@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import io
 from sklearn.neighbors import KDTree
+# import imageio
 # TODO https://github.com/panagelak/RoboND-Occupancy_Grid_Mapping-/blob/master/Inverse_Sensor_Model/solution.cpp
 
 random.seed(11)
@@ -46,6 +47,16 @@ SENSOR_BETA_RAD = 0.002  # opening angle of the beam in radians (0.09 deg)
 # SENSOR_BETA_RAD = 0.2  # opening angle of the beam in radians
 MAP_MARGIN_METERS = 1  # just for aesthetics
 l_0 = 0  # in our case no information means a 0.5 prior, and in log-odds it evaluates to 0
+
+
+def make_gif(folder):
+    with imageio.get_writer(os.path.join(folder, 'movie.gif'), mode='I', duration=0.5) as writer:
+        # oxts_data_path = os.path.join(OXTS_DATASET_PATH, 'data')
+        pathlist = Path(folder).glob('**/*.png')
+        for path in pathlist:
+            path_str = str(path)
+            image = imageio.imread(path_str)
+            writer.append_data(image)
 
 
 def convert_lla_to_enu(lat, lon, alt):
@@ -144,10 +155,10 @@ def find_center_of_mass_xy(X):
 def cross_cov_xy(P, Q):
     assert P.shape[0] > P.shape[1]
     assert Q.shape[0] > Q.shape[1]
-    W = np.zeros((2,2))
+    W = np.zeros((3,3))
     for i in range(P.shape[0]):
-        mat = np.dot(Q[i, 0:2].reshape(2, 1), P[i, 0:2].reshape(1, 2)) # * (2 + Q[i, 2] if Q[i, 2] > -0.75 and P[i, 2] > -0.75 else 1)
-        assert mat.shape[0] == 2 and mat.shape[1] == 2
+        mat = np.dot(Q[i, 0:3].reshape(3, 1), P[i, 0:3].reshape(1, 3)) # * (2 + Q[i, 2] if Q[i, 2] > -0.75 and P[i, 2] > -0.75 else 1)
+        assert mat.shape[0] == 3 and mat.shape[1] == 3
         W += mat
     return W
 
@@ -157,6 +168,7 @@ def update_occupancy_map(velodyne_frame_filtered, velodyne_frame_prev_filtered, 
 
     e_icp_diff = 0
     n_icp_diff = 0
+    u_icp_diff = 0
     e_orig = e
     n_orig = n
     yaw_icp_diff = 0
@@ -213,7 +225,7 @@ def update_occupancy_map(velodyne_frame_filtered, velodyne_frame_prev_filtered, 
         max_dist = 2
         Q = velodyne_frame_prev_filtered_copy[:, 0:3].copy()
         # Q = Q[:, [1,0,2]]  # velodyne_frame_prev_filtered_copy[1] is east due to velodyne's local axis (y point to the right, x points down)
-        Q = Q[np.linalg.norm(Q[:, 0:2], axis=1) > 7.5]
+        Q = Q[np.linalg.norm(Q[:, 0:2], axis=1) > 1.5]
         Q = Q[Q[:, 2] > -0.3]
         # Q = Q[Q[:, 2] < -0.3]
         # idx = ((Q[:, 1] > -30) & (Q[:, 1] < 20)) & (((Q[:, 0] > -20) & (Q[:, 0] < -5)) | (Q[:, 0] > 5) & (Q[:, 0] < 20))
@@ -229,7 +241,7 @@ def update_occupancy_map(velodyne_frame_filtered, velodyne_frame_prev_filtered, 
         tree = KDTree(Q_centered)
         P = velodyne_frame_filtered_copy[:, 0:3].copy()
         # P = P[:, [1, 0, 2]]
-        P = P[np.linalg.norm(P[:, 0:2], axis=1) > 7.5]
+        P = P[np.linalg.norm(P[:, 0:2], axis=1) > 1.5]
         P = P[P[:, 2] > -0.3]
         # P = P[P[:, 2] < -0.3]
         # idx = ((P[:, 1] > -30) & (P[:, 1] < 20)) & (((P[:, 0] > -20) & (P[:, 0] < -5)) | (P[:, 0] > 5) & (P[:, 0] < 20))
@@ -243,8 +255,11 @@ def update_occupancy_map(velodyne_frame_filtered, velodyne_frame_prev_filtered, 
         # random_indices = np.random.choice(P.shape[0], size=1000, replace=False)
         # P = P[random_indices, :]
         tt = np.zeros(3).reshape(3, 1)
+        RR = np.identity(3).reshape(3, 3)
         P_center = None
         P_centered = None
+        t = None
+        Pt = P.copy()
         norm_values = []
         for i in range(iterations):
         # while len(norm_values) == 0 or np.linalg.norm(P_centered[0:2000, :] - Q_centered[0:2000, :]) > 50:
@@ -263,68 +278,75 @@ def update_occupancy_map(velodyne_frame_filtered, velodyne_frame_prev_filtered, 
             norm_values.append(np.linalg.norm(P_centered[0:1000, :] - Q_centered[0:1000, :]))
 
             W = cross_cov_xy(P_matching, Q_matching)
-            assert W.shape == (2, 2)
+            assert W.shape == (3, 3)
             # W = np.dot(np.transpose(P_matching), Q_matching)
             U, S, V_T = np.linalg.svd(W)
             R = np.dot(U, V_T)
-            assert R.shape == (2, 2)
-            iden = np.identity(3)
-            iden[0:2, 0:2] = R
-            R = iden
+            assert R.shape == (3, 3)
+            # iden = np.identity(3)
+            # iden[0:2, 0:2] = R
+            # R = iden
             t = Q_center.reshape(3, 1) - np.dot(R, P_center.reshape(3, 1))
             # ttt = np.dot(R, np.array([e, n, 0]).reshape((3, 1))) + t.reshape(3, 1)
             # e = float(ttt[0])
             # n = float(ttt[1])
-            tt += t
+            if i == 0:
+                tt = t
+                RR = R
+            else:
+                # tt = np.dot(R, tt) + t
+                # RR = np.dot(R, RR)
+                tt += t
+                RR = np.dot(R, RR)
             # print(t)
-            # print(Q_center)
-            # print(P_center)
             # print('----')
             P = np.dot(R, np.transpose(P)) + t.reshape(3, 1)
             P = np.transpose(P)
 
-            dummy_vec = np.transpose(np.array([1, 0, 0]))
-            dummy_vec_rotated = np.dot(R, dummy_vec)
-            yaw += np.arctan2(dummy_vec_rotated[1], dummy_vec_rotated[0])
-            yaw_icp_diff += np.arctan2(dummy_vec_rotated[1], dummy_vec_rotated[0])
+        dummy_vec = np.transpose(np.array([1, 0, 0]))
+        dummy_vec_rotated = np.dot(RR, dummy_vec)
+        yaw += np.arctan2(dummy_vec_rotated[1], dummy_vec_rotated[0])
+        yaw_icp_diff += np.arctan2(dummy_vec_rotated[1], dummy_vec_rotated[0])
 
         # diff = np.dot(R - np.identity(3), np.array([car_pos_x, car_pos_y, 0.0]).reshape(3, 1)) + t
         # e_icp_diff = Q_center[0, 0] - (P_center[0, 0] + tt[0])
         # n_icp_diff = Q_center[0, 1] - (P_center[0, 1] + tt[1])
-        e_icp_diff = tt[1]  # velodyne_frame_prev_filtered_copy[1] is east due to velodyne's local axis (y point to the right, x points down)
-        n_icp_diff = tt[0]  # same here for north values
+        e_icp_diff = tt[1] #+ 0.2069537  # velodyne_frame_prev_filtered_copy[1] is east due to velodyne's local axis (y point to the right, x points down)
+        n_icp_diff = tt[0] #+ 0.35403833  # same here for north values
+        u_icp_diff = tt[2]  # same here for north values
         # print("x_diff: {} y_diff {}".format(e_icp_diff, n_icp_diff))
 
         print("start norm [{}] end norm [{}]".format(norm_values[0], norm_values[-1]))
 
-        print("frame [{}] after ICP: e_icp_diff {} n_icp_diff {} yaw_icp_diff {}".format(frame_idx, e_icp_diff, n_icp_diff, yaw_icp_diff))
+        print("frame [{}] after ICP: e_icp_diff {} n_icp_diff {} u_icp_diff {} yaw_icp_diff {}".format(frame_idx, e_icp_diff, n_icp_diff, u_icp_diff, yaw_icp_diff))
 
-        _, velodyne_raw_bev_P, _ = process_frame(P, frame_idx - 1)
-        _, velodyne_raw_bev_Q, _ = process_frame(Q, frame_idx)
-        _, velodyne_filtered_prev_bev_P, _ = process_frame(velodyne_frame_filtered_copy, frame_idx - 1)
-        _, velodyne_filtered_bev_Q, _ = process_frame(velodyne_frame_prev_filtered_copy, frame_idx)
-        fig, (ax1, ax2) = plt.subplots(1, 2)
+        if frame_idx > 0 and frame_idx % 5 == 0:
+            _, velodyne_raw_bev_P, _ = process_frame(P, frame_idx - 1)
+            _, velodyne_raw_bev_Q, _ = process_frame(Q, frame_idx)
+            _, velodyne_filtered_prev_bev_P, _ = process_frame(velodyne_frame_filtered_copy, frame_idx - 1)
+            _, velodyne_filtered_bev_Q, _ = process_frame(velodyne_frame_prev_filtered_copy, frame_idx)
+            fig, (ax1, ax2) = plt.subplots(1, 2)
 
-        map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
-        ax1.set_xticks([0, (map_size // 2), map_size - 1])
-        ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax1.set_yticks([0, (map_size // 2), map_size - 1])
-        ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax1.set_xlabel('X [meters]', fontsize=20)
-        ax1.set_ylabel('Y [meters]', fontsize=20)
-        ax1.set_title('Instantaneous Point Cloud')
-        ax1.imshow(velodyne_filtered_bev_Q + velodyne_filtered_prev_bev_P, vmin=0.0, vmax=1.0)
+            map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
+            ax1.set_xticks([0, (map_size // 2), map_size - 1])
+            ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
+            ax1.set_yticks([0, (map_size // 2), map_size - 1])
+            ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+            ax1.set_xlabel('X [meters]', fontsize=20)
+            ax1.set_ylabel('Y [meters]', fontsize=20)
+            ax1.set_title('Instantaneous Point Cloud')
+            ax1.imshow(velodyne_filtered_bev_Q + velodyne_filtered_prev_bev_P, vmin=0.0, vmax=1.0)
 
-        ax2.set_xticks([0, (map_size // 2), map_size - 1])
-        ax2.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax2.set_yticks([0, (map_size // 2), map_size - 1])
-        ax2.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax2.set_xlabel('X [meters]', fontsize=20)
-        ax2.set_ylabel('Y [meters]', fontsize=20)
-        ax2.set_title('Instantaneous Point Cloud')
-        ax2.imshow(velodyne_raw_bev_Q + velodyne_raw_bev_P, vmin=0.0, vmax=1.0)
+            ax2.set_xticks([0, (map_size // 2), map_size - 1])
+            ax2.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
+            ax2.set_yticks([0, (map_size // 2), map_size - 1])
+            ax2.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+            ax2.set_xlabel('X [meters]', fontsize=20)
+            ax2.set_ylabel('Y [meters]', fontsize=20)
+            ax2.set_title('Instantaneous Point Cloud')
+            ax2.imshow(velodyne_raw_bev_Q + velodyne_raw_bev_P, vmin=0.0, vmax=1.0)
 
-        plt.show()
+            plt.show()
 
         car_pos_x += e_icp_diff
         car_pos_y += n_icp_diff
@@ -607,7 +629,7 @@ def main():
         R = np.array([float(a) for a in lines[1].strip().replace("R: ", "").split(" ")]).reshape(3, 3)
         t = np.array([float(a) for a in lines[2].strip().replace("T: ", "").split(" ")]).reshape(3, 1)
         enu_corrected = (np.dot(R, enu.T) + t).T
-    enu = enu_corrected
+    # enu = enu_corrected
 
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
 
@@ -744,14 +766,18 @@ def main():
     yaw = rpy_enu[:, 2]  # for all frames
 
     # setup noisy samples for section 3
-    # enu_noise = enu + np.concatenate((np.random.normal(0, 0.5, (enu.shape[0], 2)), np.zeros((enu.shape[0], 1))), axis=1)
-    enu_noise = enu.copy() # + np.concatenate(( np.zeros((enu.shape[0], 1)), 0.5 * np.ones((enu.shape[0], 1)), np.zeros((enu.shape[0], 1)) ), axis=1)
-    # yaw_noise = yaw + np.random.normal(0, 0.02, yaw.shape[0])
-    yaw_noise = yaw.copy()
+    enu_noise = enu + np.concatenate((np.random.normal(0, 0.5, (enu.shape[0], 2)), np.zeros((enu.shape[0], 1))), axis=1)
+    # enu_noise = enu.copy() # + np.concatenate(( np.zeros((enu.shape[0], 1)), 0.5 * np.ones((enu.shape[0], 1)), np.zeros((enu.shape[0], 1)) ), axis=1)
+    yaw_noise = yaw + np.random.normal(0, 0.01, yaw.shape[0])
+    # yaw_noise = yaw.copy()
     # enu_noise[1, 1] += 1.5
     # enu_noise[2, 1] += 0.5
     # print("enu_noise:")
     # print(enu_noise[0:3, :])
+    enu_noise[0, 0:2] = enu[0, 0:2]
+
+    print(enu_noise[0:5, :])
+    print(yaw_noise[0:5])
 
     print("Iterative Closest Point (ICP)")
     fig, (ax1, ax2) = plt.subplots(1, 2)
@@ -870,9 +896,9 @@ def main():
     n_noise_icp = [float(enu_noise[0, 1])]
     yaw_noise_icp = [float(yaw_noise[0])]
 
-    # enu_noise[1, 0] -= 1.5
-    # enu_noise[1, 1] -= 1.5
-    # yaw_noise[1] -= 0.05
+    # enu_noise[1, 0] += 0.5
+    enu_noise[1, 1] += 1.7
+    # yaw_noise[1] += 0.03
 
     for config in configs:
         occupancy_map = np.zeros((map_size_v, map_size_u), dtype=float)
@@ -885,9 +911,18 @@ def main():
         is_animation = config['is_animation']
         apply_icp = config['apply_icp']
         print("Now processing [{}]...".format(config['folder']))
-        for frame_idx in range(frame_count if not apply_icp else frame_count - 1):
+        for frame_idx in range(frame_count):  #  range(frame_count if not apply_icp else frame_count - 1)
             ts = int(time.time())
             velodyne_frame = velodyne["frames_raw"][frame_idx].copy()
+            # velodyne_frame = np.array([
+            #     [20, 20, 0, 0],
+            #     [10, 10, 2, 0],
+            #     [10, 20, 2, 0],
+            #     [-10, -5, 2, 0],
+            #     [5, 5, 2, 0],
+            #     [17, 9, 2, 0],
+            #     [19, -5, 2, 0]
+            # ], dtype=float)
             img, velodyne_raw_bev, _ = process_frame(velodyne_frame, frame_idx)
             velodyne_frame_filtered = filter_velodyne_data(velodyne_frame.copy())
             car_pos_x = start_point_x + enu_from_config[frame_idx, 0]
@@ -906,14 +941,25 @@ def main():
                 theta_diff = yaw_from_config[frame_idx] - yaw_noise_icp[-1]  # yaw_from_config[frame_idx - 1]
                 R = np.identity(4)
                 R[0:2, 0:2] = np.array([[np.cos(-theta_diff), -np.sin(-theta_diff)], [np.sin(-theta_diff), np.cos(-theta_diff)]]).reshape(2, 2)
-                t_e_diff = (enu_from_config[frame_idx, 0] - e_noise_icp[-1])  # enu_from_config[frame_idx - 1, 0])
-                t_n_diff = -(enu_from_config[frame_idx, 1] - n_noise_icp[-1])  # enu_from_config[frame_idx - 1, 1])
+                # print(R)
+                t_e_diff = -(enu_from_config[frame_idx, 0] - e_noise_icp[-1])  # enu_from_config[frame_idx - 1, 0])
+                t_n_diff = (enu_from_config[frame_idx, 1] - n_noise_icp[-1])  # enu_from_config[frame_idx - 1, 1])
                 t = np.array([t_n_diff, t_e_diff, 0.0, 0.0]).reshape(4, 1)
+                print(t)
                 # print("going to apply t {}".format(t))
                 velodyne_frame = (np.dot(R, velodyne_frame.T) + t).T
                 velodyne_frame_filtered = (np.dot(R, velodyne_frame_filtered.T) + t).T
 
                 velodyne_frame_prev = velodyne["frames_raw"][frame_idx - 1].copy()
+                # velodyne_frame_prev = np.array([
+                #     [20, 20, 0, 0],
+                #     [10, 10, 2, 0],
+                #     [10, 20, 2, 0],
+                #     [-10, -5, 2, 0],
+                #     [5, 5, 2, 0],
+                #     [17, 9, 2, 0],
+                #     [19, -5, 2, 0]
+                # ], dtype=float)
                 velodyne_frame_prev_filtered = filter_velodyne_data(velodyne_frame_prev.copy())
                 # theta = -yaw_from_config[frame_idx - 1]
                 # R = np.identity(4)
@@ -923,6 +969,7 @@ def main():
                 # # t_n_diff = enu_from_config[frame_idx - 1, 1]
                 # t = np.array([t_e_diff, t_n_diff, 0.0, 0.0]).reshape(4, 1)
                 # velodyne_frame_prev_filtered = (np.dot(R, velodyne_frame_prev_filtered.T) + t).T
+                print("Expecting {} {} {}".format(enu_noise[frame_idx, 0] - enu[frame_idx, 0], enu_noise[frame_idx, 1] - enu[frame_idx, 1], yaw_noise[frame_idx] - yaw[frame_idx]))
             e_icp_diff, n_icp_diff, yaw_icp_diff = update_occupancy_map(velodyne_frame, velodyne_frame_prev, frame_idx, occupancy_map, car_pos_x, car_pos_y, float(enu_from_config[frame_idx, 0]), float(enu_from_config[frame_idx, 1]), float(yaw_from_config[frame_idx]), l_occ, l_free)
 
             # print("before: e {} n {}".format(float(enu_from_config[frame_idx, 0]), float(enu_from_config[frame_idx, 1])))
@@ -972,7 +1019,7 @@ def main():
                     render_frame(img, velodyne_raw_bev, occupancy_map_render, frame_idx, config['folder'])
             print("Frame index [{}] done in [{}] seconds".format(frame_idx, int(time.time() - ts)))
 
-            if frame_idx > 1 and frame_idx % 20 == 0:
+            if frame_idx > 1 and frame_idx % 5 == 0:
                 fig, (ax1, ax2) = plt.subplots(1, 2)
                 ax1.plot(enu[:, 0], enu[:, 1], color='b', linestyle='solid', markersize=1)
                 ax1.plot(enu_from_config[:, 0], enu_from_config[:, 1], color='r', linestyle='solid', markersize=1)
