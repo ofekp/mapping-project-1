@@ -988,7 +988,7 @@ def main():
                 # print(R)
                 radius = np.linalg.norm([(enu_from_config[frame_idx, 0] - e_noise_icp[-1]), (enu_from_config[frame_idx, 1] - n_noise_icp[-1])])
                 t_x_diff = np.cos(theta_diff)*radius#(enu_from_config[frame_idx, 0] - e_noise_icp[-1])  # enu_from_config[frame_idx - 1, 0])
-                t_y_diff = np.cos(theta_diff + np.pi/2)*radius#(enu_from_config[frame_idx, 1] - n_noise_icp[-1])  # enu_from_config[frame_idx - 1, 1])
+                t_y_diff = -np.cos(theta_diff + np.pi/2)*radius#(enu_from_config[frame_idx, 1] - n_noise_icp[-1])  # enu_from_config[frame_idx - 1, 1])
                 # t_e_diff = enu_from_config[frame_idx, 0] - e_noise_icp[-1]
                 # t_n_diff = enu_from_config[frame_idx, 1] - n_noise_icp[-1]
                 t = np.array([t_x_diff, t_y_diff, 0.0, 0.0]).reshape(4, 1)
