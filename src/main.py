@@ -228,7 +228,10 @@ def inverse_sensor_model_async(car_pos_x, car_pos_y, curr_cell_center_x, curr_ce
 def inverse_sensor_model(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_center_y, yaw, velodyne_filtered, l_occ, l_free):
     r = np.linalg.norm(np.array([curr_cell_center_x - car_pos_x, curr_cell_center_y - car_pos_y]))
     phi = np.arctan2(curr_cell_center_y - car_pos_y, curr_cell_center_x - car_pos_x) - yaw
-    phi = phi - math.pi if phi > math.pi else phi + math.pi
+    # print("{} {} {} {} {}".format(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_center_y, phi))
+    # exit(1)
+    # phi = phi - math.pi if phi > math.pi else phi + math.pi
+    # phi =  phi + math.pi
     min_angle_diff = None
     min_angle_diff_sample = None
     min_angle_diff_sample_angle = None
@@ -288,8 +291,8 @@ def find_center_of_mass_xy(X):
 
 def update_occupancy_map(velodyne_frame_filtered, occupancy_map, car_pos_x, car_pos_y, yaw, l_occ, l_free, is_async=True):
     velodyne_frame_filtered_copy = velodyne_frame_filtered.copy()
-
-    velodyne_frame_filtered_copy = np.concatenate((velodyne_frame_filtered_copy, np.arctan2(velodyne_frame_filtered_copy[:, 0], velodyne_frame_filtered_copy[:, 1]).reshape(velodyne_frame_filtered_copy.shape[0], 1)), axis=1)
+    # velodyne_frame_filtered_copy = transform_velodyne(velodyne_frame_filtered_copy, 0, 0, 0, yaw, np.identity(4), np.zeros(4).reshape(4, 1))
+    velodyne_frame_filtered_copy = np.concatenate((velodyne_frame_filtered_copy, np.arctan2(velodyne_frame_filtered_copy[:, 0], -velodyne_frame_filtered_copy[:, 1]).reshape(velodyne_frame_filtered_copy.shape[0], 1)), axis=1)
     # velodyne_filtered = np.concatenate((velodyne_filtered, np.arctan2(-velodyne_filtered[:, 1], velodyne_filtered[:, 0]).reshape(velodyne_filtered.shape[0], 1)), axis=1)
     velodyne_frame_filtered_copy = velodyne_frame_filtered_copy[velodyne_frame_filtered_copy[:, 4].argsort()]
     max_range_uv = int(MAX_RANGE_RADIUS_METERS // MAP_RESOLUTION)
@@ -717,16 +720,16 @@ def main():
     plt.show()
 
     configs = [
-        # {
-        #     "folder": "occupancy_map_1_hit_0.7_miss_0.4_occ_threshold_0.8",
-        #     "hit": 0.7,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.8,
-        #     "enu_vec": enu,
-        #     "yaw_vec": yaw,
-        #     "is_animation": True,
-        #     "apply_icp": False
-        # },
+        {
+            "folder": "occupancy_map_1_hit_0.7_miss_0.4_occ_threshold_0.8",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.8,
+            "enu_vec": enu,
+            "yaw_vec": yaw,
+            "is_animation": True,
+            "apply_icp": False
+        },
         # {
         #     "folder": "occupancy_map_2_hit_0.9_miss_0.1_occ_threshold_0.8",
         #     "hit": 0.9,
@@ -778,17 +781,17 @@ def main():
         #     "is_animation": True,
         #     "apply_icp": False
         # },
-        {
-            "description": "section 3b - noisy east, north and yaw + icp correction",
-            "folder": "occupancy_map_7_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.8,
-            "enu_vec": enu_noise,
-            "yaw_vec": yaw_noise,
-            "is_animation": True,
-            "apply_icp": True
-        },
+        # {
+        #     "description": "section 3b - noisy east, north and yaw + icp correction",
+        #     "folder": "occupancy_map_7_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
+        #     "hit": 0.7,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.8,
+        #     "enu_vec": enu_noise,
+        #     "yaw_vec": yaw_noise,
+        #     "is_animation": True,
+        #     "apply_icp": True
+        # },
 
         # {
         #     "description": "section 3b - noisy east, north and yaw",
