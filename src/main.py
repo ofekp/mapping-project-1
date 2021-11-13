@@ -791,28 +791,28 @@ def main():
             "apply_icp": True
         },
 
-        {
-            "description": "section 3b - noisy east, north and yaw",
-            "folder": "occupancy_map_8_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.8,
-            "enu_vec": enu,
-            "yaw_vec": yaw,
-            "is_animation": True,
-            "apply_icp": False
-        },
-        {
-            "description": "section 3b - noisy east, north and yaw",
-            "folder": "occupancy_map_9_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.8,
-            "enu_vec": enu_noise,
-            "yaw_vec": yaw_noise,
-            "is_animation": True,
-            "apply_icp": True
-        },
+        # {
+        #     "description": "section 3b - noisy east, north and yaw",
+        #     "folder": "occupancy_map_8_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
+        #     "hit": 0.7,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.8,
+        #     "enu_vec": enu,
+        #     "yaw_vec": yaw,
+        #     "is_animation": True,
+        #     "apply_icp": False
+        # },
+        # {
+        #     "description": "section 3b - noisy east, north and yaw",
+        #     "folder": "occupancy_map_9_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
+        #     "hit": 0.7,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.8,
+        #     "enu_vec": enu_noise,
+        #     "yaw_vec": yaw_noise,
+        #     "is_animation": True,
+        #     "apply_icp": True
+        # },
     ]
 
     # print("ENU Graph")
@@ -904,26 +904,26 @@ def main():
                 # n_noise_icp.append(enu_from_config[frame_idx, 1] + t_n_diff + float(n_icp_diff))
                 # yaw_noise_icp.append(yaw_from_config[frame_idx] + theta + float(yaw_icp_diff))
 
-                if frame_idx > 1 and frame_idx % 5 == 0:
-                    fig, (ax1, ax2) = plt.subplots(1, 2)
-                    ax1.plot(enu[:, 0], enu[:, 1], color='b', linestyle='solid', markersize=1)
-                    ax1.plot(enu_noise[:, 0], enu_noise[:, 1], color='r', linestyle='solid', markersize=1)
-                    ax1.plot(e_noise_icp, n_noise_icp, color='g', linestyle='solid', markersize=1)
-                    ax1.set_aspect('equal', adjustable='box')
-                    ax1.set_xlabel('Longitude [degrees]', fontsize=20)
-                    ax1.set_ylabel('Latitude [degrees]', fontsize=20)
-                    ax1.legend(["Raw lon/lat samples", "Samples with Gaussian noise sigma=0.000005 deg"],
-                               prop={"size": 20},
-                               loc="best")
-
-                    ax2.plot(range(0, frame_count), yaw, color='b', linestyle='solid', markersize=1)
-                    ax2.plot(range(0, frame_count), yaw_noise[:], color='r', linestyle='solid', markersize=1)
-                    ax2.plot(range(0, len(yaw_noise_icp)), yaw_noise_icp, color='g', linestyle='solid', markersize=1)
-                    ax2.set_xlabel('Frame Index', fontsize=20)
-                    ax2.set_ylabel('Yaw [rad]', fontsize=20)
-                    ax2.legend(["Raw yaw samples", "yaw with Gaussian noise, sigma=0.01 rad"], prop={"size": 20},
-                               loc="best")
-                    plt.show()
+                # if apply_icp and frame_idx > 1 and frame_idx % 5 == 0:
+                #     fig, (ax1, ax2) = plt.subplots(1, 2)
+                #     ax1.plot(enu[:, 0], enu[:, 1], color='b', linestyle='solid', markersize=1)
+                #     ax1.plot(enu_noise[:, 0], enu_noise[:, 1], color='r', linestyle='solid', markersize=1)
+                #     ax1.plot(e_noise_icp, n_noise_icp, color='g', linestyle='solid', markersize=1)
+                #     ax1.set_aspect('equal', adjustable='box')
+                #     ax1.set_xlabel('Longitude [degrees]', fontsize=20)
+                #     ax1.set_ylabel('Latitude [degrees]', fontsize=20)
+                #     ax1.legend(["Raw lon/lat samples", "Samples with Gaussian noise sigma=0.000005 deg"],
+                #                prop={"size": 20},
+                #                loc="best")
+                #
+                #     ax2.plot(range(0, frame_count), yaw, color='b', linestyle='solid', markersize=1)
+                #     ax2.plot(range(0, frame_count), yaw_noise[:], color='r', linestyle='solid', markersize=1)
+                #     ax2.plot(range(0, len(yaw_noise_icp)), yaw_noise_icp, color='g', linestyle='solid', markersize=1)
+                #     ax2.set_xlabel('Frame Index', fontsize=20)
+                #     ax2.set_ylabel('Yaw [rad]', fontsize=20)
+                #     ax2.legend(["Raw yaw samples", "yaw with Gaussian noise, sigma=0.01 rad"], prop={"size": 20},
+                #                loc="best")
+                #     plt.show()
 
             enu_from_config[frame_idx, 0] = icp_corrected_e
             enu_from_config[frame_idx, 1] = icp_corrected_n
@@ -962,6 +962,27 @@ def main():
             print("Frame index [{}] done in [{}] seconds".format(frame_idx, int(time.time() - ts)))
         if is_animation:
             make_gif(config['folder'])
+
+        if apply_icp:
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            ax1.plot(enu[:, 0], enu[:, 1], color='b', linestyle='solid', markersize=1)
+            ax1.plot(enu_noise[:, 0], enu_noise[:, 1], color='r', linestyle='solid', markersize=1)
+            ax1.plot(e_noise_icp, n_noise_icp, color='g', linestyle='solid', markersize=1)
+            ax1.set_aspect('equal', adjustable='box')
+            ax1.set_xlabel('Longitude [degrees]', fontsize=20)
+            ax1.set_ylabel('Latitude [degrees]', fontsize=20)
+            ax1.legend(["Raw lon/lat samples", "Samples with Gaussian noise sigma=0.000005 deg"],
+                       prop={"size": 20},
+                       loc="best")
+
+            ax2.plot(range(0, frame_count), yaw, color='b', linestyle='solid', markersize=1)
+            ax2.plot(range(0, frame_count), yaw_noise[:], color='r', linestyle='solid', markersize=1)
+            ax2.plot(range(0, len(yaw_noise_icp)), yaw_noise_icp, color='g', linestyle='solid', markersize=1)
+            ax2.set_xlabel('Frame Index', fontsize=20)
+            ax2.set_ylabel('Yaw [rad]', fontsize=20)
+            ax2.legend(["Raw yaw samples", "yaw with Gaussian noise, sigma=0.01 rad"], prop={"size": 20},
+                       loc="best")
+            plt.show()
     print("Iterative Closest Point (ICP)")
     print("Done")
 
