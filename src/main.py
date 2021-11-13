@@ -26,6 +26,10 @@ np.random.seed(19)
 
 MAIN_DATASET_PATH = "../../Data/kitti_data/2011_09_26"
 DRIVE_NUMBER = "0013"
+# MAIN_DATASET_PATH = "../../Data2/kitti_data/2011_09_26"
+# DRIVE_NUMBER = "0005"
+# MAIN_DATASET_PATH = "../../Data3/kitti_data/2011_09_26"
+# DRIVE_NUMBER = "0061"
 OXTS_DATASET_PATH = MAIN_DATASET_PATH + "/2011_09_26_drive_" + DRIVE_NUMBER + "_sync/oxts"
 VELODYNE_DATASET_PATH = MAIN_DATASET_PATH + "/2011_09_26_drive_" + DRIVE_NUMBER + "_sync/velodyne_points"
 COLOR_IMAGE_DATASET_PATH = MAIN_DATASET_PATH + "/2011_09_26_drive_" + DRIVE_NUMBER + "_sync/image_02"
@@ -106,6 +110,7 @@ def calc_icp(velodyne_frame, velodyne_frame_prev, frame_idx, folder):
     :param velodyne_frame_prev: a point cloud for the previous frame [number_of_frames x 4]
     :param frame_idx: the current frame index
     :param folder: the folder in which to save the comparison of the cloud before and after ICP is applied
+                   if the folder argument is None, the image is simply shown as prompt
     :return: the correction that needs to be applied on the current frame in order to fit it to the previous frame as
              calculated by the Intersecting Closest Point algorithm
     """
@@ -145,7 +150,6 @@ def calc_icp(velodyne_frame, velodyne_frame_prev, frame_idx, folder):
         Q_center = find_center_of_mass_xy(Q_matching).reshape(1, 3)
         Q_centered = Q_matching - Q_center
 
-        # norm_values.append(np.linalg.norm(P_centered[0:1000, :] - Q_centered[0:1000, :]))
         W = np.dot(P_centered.T, Q_centered)
         assert W.shape == (3, 3)
         # W = np.dot(np.transpose(P_matching), Q_matching)
@@ -191,7 +195,6 @@ def calc_icp(velodyne_frame, velodyne_frame_prev, frame_idx, folder):
 
     e_icp_diff = tt[0]
     n_icp_diff = tt[1]
-    z_icp_diff = tt[2]
 
     # print("frame [{}] after ICP: x_icp_diff {} y_icp_diff {} z_icp_diff {} yaw_icp_diff {}".format(frame_idx,
     #                                                                                                x_icp_diff,
@@ -224,14 +227,18 @@ def calc_icp(velodyne_frame, velodyne_frame_prev, frame_idx, folder):
     ax2.set_title('Instantaneous Point Cloud')
     ax2.imshow(velodyne_raw_bev_Q + velodyne_raw_bev_P, vmin=0.0, vmax=1.0)
 
-    figure = plt.gcf()  # get current figure
-    figure.set_size_inches(20, 20)
-    ram = io.BytesIO()
-    plt.savefig(ram, format='png', dpi=100)
-    ram.seek(0)
-    im = Image.open(ram)
-    im2 = im.convert('RGB').convert('P', palette=Image.ADAPTIVE)
-    im2.save("../../Results/{}_ICP_Matching/{:04d}.png".format(folder, frame_idx), format='PNG')
+    if folder:
+        figure = plt.gcf()  # get current figure
+        figure.set_size_inches(20, 20)
+        ram = io.BytesIO()
+        plt.savefig(ram, format='png', dpi=100)
+        ram.seek(0)
+        im = Image.open(ram)
+        im2 = im.convert('RGB').convert('P', palette=Image.ADAPTIVE)
+        im2.save("../../Results/{}_ICP_Matching/{:04d}.png".format(folder, frame_idx), format='PNG')
+    else:
+        plt.show()
+
     return e_icp_diff, n_icp_diff, yaw_icp_diff
 
 
@@ -898,6 +905,78 @@ def main():
     velo_to_imu_t = np.zeros(4).reshape(4, 1)
     velo_to_imu_t[0:3] = t.reshape(3, 1)
 
+    # sanity that the transform method is working
+    curr_frame = 15
+    prev_frame = 0
+    velodyne_frame = velodyne["frames_raw"][curr_frame].copy()
+    velodyne_frame_prev = velodyne["frames_raw"][prev_frame].copy()
+    velodyne_frame_transformed = transform_velodyne(velodyne_frame, enu[curr_frame, 0],
+                                                    enu[curr_frame, 1], enu[curr_frame, 2],
+                                                    yaw[curr_frame], velo_to_imu_R, velo_to_imu_t)
+    velodyne_frame_prev_transformed = transform_velodyne(velodyne_frame_prev, enu[prev_frame, 0], enu[prev_frame, 1],
+                                                         enu[prev_frame, 2], yaw[prev_frame],
+                                                         velo_to_imu_R, velo_to_imu_t)
+    _, velodyne_frame_transformed_bev = process_frame(
+        np.concatenate([velodyne_frame_transformed, velodyne_frame_prev_transformed], axis=0), 0, curr_frame)
+    fig, (ax1) = plt.subplots(1, 1)
+
+    map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
+    ax1.set_xticks([0, (map_size // 2), map_size - 2])
+    ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax1.set_yticks([0, (map_size // 2), map_size - 2])
+    ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax1.set_xlabel('X [meters]', fontsize=20)
+    ax1.set_ylabel('Y [meters]', fontsize=20)
+    ax1.set_title('Difference between frame [{}] and frame [{}] after transforming'.format(curr_frame, prev_frame))
+    ax1.imshow(velodyne_frame_transformed_bev, vmin=0.0, vmax=1.0)
+
+    plt.show()
+
+    # sanity that ICP is working
+    # I take the same frame and transpose it, expecting that the ICP algorithm will find the inverse of that transpose
+    curr_frame = 15
+    velodyne_frame = velodyne["frames_raw"][curr_frame].copy()
+    velodyne_frame = transform_velodyne(velodyne_frame, enu[curr_frame, 0],
+                                        enu[curr_frame, 1], enu[curr_frame, 2],
+                                        yaw[curr_frame], velo_to_imu_R, velo_to_imu_t)
+    velodyne_frame_transposed = velodyne["frames_raw"][curr_frame].copy()
+    velodyne_frame_transposed = transform_velodyne(velodyne_frame_transposed, enu[curr_frame, 0],
+                                                   enu[curr_frame, 1], enu[curr_frame, 2],
+                                                   yaw[curr_frame], velo_to_imu_R, velo_to_imu_t)
+
+    delta_x = 1.5
+    delta_y = 0.4
+    delta_rad = 0.1
+    rotation = np.identity(4)
+    rotation[0:2, 0:2] = np.array([[np.cos(delta_rad), np.sin(delta_rad)], [-np.sin(delta_rad), np.cos(delta_rad)]]).reshape(2, 2)
+    translation = np.array([delta_x, delta_y, 0, 0]).reshape(4, 1)
+    velodyne_frame_transposed = (np.dot(rotation, velodyne_frame_transposed.T) + translation).T
+    e_icp_diff, n_icp_diff, yaw_icp_diff = calc_icp(velodyne_frame, velodyne_frame_transposed, curr_frame, None)
+    print("e_icp_diff [{}] n_icp_diff [{}] yaw_icp_diff [{}]".format(e_icp_diff, n_icp_diff, yaw_icp_diff))
+
+    rotation = np.identity(4)
+    rotation[0:2, 0:2] = np.array([[np.cos(yaw_icp_diff), np.sin(yaw_icp_diff)], [-np.sin(yaw_icp_diff), np.cos(yaw_icp_diff)]]).reshape(2, 2)
+    translation = np.array([e_icp_diff, n_icp_diff, 0, 0]).reshape(4, 1)
+    velodyne_frame_corrected = (np.dot(rotation, velodyne_frame_transposed.T) - translation).T
+    _, velodyne_frame_transformed_bev = process_frame(np.concatenate([velodyne_frame, velodyne_frame_corrected], axis=0), 0, curr_frame)
+    fig, (ax1) = plt.subplots(1, 1)
+
+    map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
+    ax1.set_xticks([0, (map_size // 2), map_size - 2])
+    ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax1.set_yticks([0, (map_size // 2), map_size - 2])
+    ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax1.set_xlabel('X [meters]', fontsize=20)
+    ax1.set_ylabel('Y [meters]', fontsize=20)
+    ax1.set_title('Moving a transposed frame according to the ICP result'.format(curr_frame, prev_frame))
+    ax1.imshow(velodyne_frame_transformed_bev, vmin=0.0, vmax=1.0)
+
+    plt.show()
+
+    assert abs(e_icp_diff - delta_x) < 0.01
+    assert abs(n_icp_diff - delta_y) < 0.01
+    assert abs(yaw_icp_diff - (-delta_rad)) < 0.01
+
     for config in configs:
         occupancy_map = np.zeros((map_size_v, map_size_u), dtype=float)
         occ_threshold_log_odds = log_odds(config['occ_threshold'])
@@ -925,30 +1004,13 @@ def main():
                 velodyne_frame_transformed = transform_velodyne(velodyne_frame, enu_from_config[frame_idx, 0], enu_from_config[frame_idx, 1], enu_from_config[frame_idx, 2], yaw_from_config[frame_idx], velo_to_imu_R, velo_to_imu_t)
                 velodyne_frame_prev_transformed = transform_velodyne(velodyne_frame_prev, e_noise_icp[-1], n_noise_icp[-1], enu_from_config[frame_idx - 1, 2], yaw_noise_icp[-1], velo_to_imu_R, velo_to_imu_t)
 
-                # # - np.array([enu_from_config[frame_idx, 0], enu_from_config[frame_idx, 1], enu_from_config[frame_idx, 2], 0])
-                # _, velodyne_frame_transformed_bev, _ = process_frame(np.concatenate([velodyne_frame_transformed, velodyne_frame_prev_transformed], axis=0), frame_idx)
-                # # _, velodyne_frame_prev_transformed_bev, _ = process_frame(velodyne_frame_prev_transformed - np.array([enu_from_config[frame_idx, 0], enu_from_config[frame_idx, 1], enu_from_config[frame_idx, 2], 0]), frame_idx)
-                # fig, (ax1) = plt.subplots(1, 1)
-                #
-                # map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
-                # ax1.set_xticks([0, (map_size // 2), map_size - 1])
-                # ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-                # ax1.set_yticks([0, (map_size // 2), map_size - 1])
-                # ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
-                # ax1.set_xlabel('X [meters]', fontsize=20)
-                # ax1.set_ylabel('Y [meters]', fontsize=20)
-                # ax1.set_title('Instantaneous Point Cloud')
-                # ax1.imshow(velodyne_frame_transformed_bev, vmin=0.0, vmax=1.0)
-                #
-                # plt.show()
-
                 e_icp_diff, n_icp_diff, yaw_icp_diff = calc_icp(velodyne_frame_transformed, velodyne_frame_prev_transformed, frame_idx, config['folder'])
 
                 # build noise vs ICP corrected graph
 
                 # only update e,n,yaw if the detected noise is within a reasonable range
-                if abs(float(n_icp_diff)) < 1 \
-                    and abs(float(e_icp_diff)) < 1:
+                if abs(float(n_icp_diff)) < 2 \
+                    and abs(float(e_icp_diff)) < 2:
                     icp_corrected_e -= float(n_icp_diff)
                     icp_corrected_n += float(e_icp_diff)
                 if abs(float(yaw_icp_diff)) < 0.05:
