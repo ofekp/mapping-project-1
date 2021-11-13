@@ -5,7 +5,6 @@ import random
 from pathlib import Path
 from datetime import datetime
 # note that to install pymap3d on pycharm when using Conda, the "conda-forge" repo must be added in the settings of the interpreter
-# TODO: ask if it's is ok to use this
 import pymap3d as pm
 import pandas as pd
 import struct
@@ -21,15 +20,12 @@ from PIL import Image
 import io
 from sklearn.neighbors import KDTree
 import imageio
-# TODO https://github.com/panagelak/RoboND-Occupancy_Grid_Mapping-/blob/master/Inverse_Sensor_Model/solution.cpp
 
-random.seed(11)
-np.random.seed(17)
+random.seed(13)
+np.random.seed(19)
 
 MAIN_DATASET_PATH = "../../Data/kitti_data/2011_09_26"
 DRIVE_NUMBER = "0013"
-# MAIN_DATASET_PATH = "../../Data2/kitti_data/2011_09_26"
-# DRIVE_NUMBER = "0005"
 OXTS_DATASET_PATH = MAIN_DATASET_PATH + "/2011_09_26_drive_" + DRIVE_NUMBER + "_sync/oxts"
 VELODYNE_DATASET_PATH = MAIN_DATASET_PATH + "/2011_09_26_drive_" + DRIVE_NUMBER + "_sync/velodyne_points"
 COLOR_IMAGE_DATASET_PATH = MAIN_DATASET_PATH + "/2011_09_26_drive_" + DRIVE_NUMBER + "_sync/image_02"
@@ -85,8 +81,7 @@ def log_odds(x):
     return math.log(x / (1 - x))
 
 
-def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx):
-
+def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx, folder):
     velodyne_frame_transformed_copy = velodyne_frame_transformed.copy()
     velodyne_frame_prev_copy = velodyne_frame_prev.copy()
 
@@ -105,7 +100,9 @@ def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx):
     err = 1.0e06
     delta_err = 1.0e06
     T = np.identity(4)
-    while delta_err > 1e-12:
+    iter = 0
+    max_iterations = 200
+    while delta_err > 1e-16 and iter < max_iterations:
         # pick the best points
         dist_, ind_ = tree.query(Pt, k=1)
         dist, ind = dist_.squeeze(), ind_.squeeze()
@@ -159,63 +156,64 @@ def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx):
         new_err /= float(len(ind))
         delta_err = abs(err - new_err)
         err = new_err
+        iter += 1
 
     dummy_vec = np.transpose(np.array([1, 0, 0]))
     dummy_vec_rotated = np.dot(RR, dummy_vec)
-    # yaw += np.arctan2(dummy_vec_rotated[1], dummy_vec_rotated[0])
     yaw_icp_diff = np.arctan2(dummy_vec_rotated[1], dummy_vec_rotated[0])
 
-    x_icp_diff = tt[0]
-    y_icp_diff = tt[1]
+    e_icp_diff = tt[0]
+    n_icp_diff = tt[1]
     z_icp_diff = tt[2]
 
-    print("frame [{}] after ICP: x_icp_diff {} y_icp_diff {} z_icp_diff {} yaw_icp_diff {}".format(frame_idx,
-                                                                                                   x_icp_diff,
-                                                                                                   y_icp_diff,
-                                                                                                   z_icp_diff,
-                                                                                                   yaw_icp_diff))
+    # print("frame [{}] after ICP: x_icp_diff {} y_icp_diff {} z_icp_diff {} yaw_icp_diff {}".format(frame_idx,
+    #                                                                                                x_icp_diff,
+    #                                                                                                y_icp_diff,
+    #                                                                                                z_icp_diff,
+    #                                                                                                yaw_icp_diff))
 
-    # if frame_idx == 0 or frame_idx % 20 == 0:
-    if False:
-        _, velodyne_raw_bev_P, _ = process_frame(Pt, frame_idx - 1)
-        _, velodyne_raw_bev_Q, _ = process_frame(Q, frame_idx)
-        _, velodyne_frame_transformed_copy_bev, _ = process_frame(velodyne_frame_transformed_copy, frame_idx - 1)
-        _, velodyne_frame_prev_copy_bev, _ = process_frame(velodyne_frame_prev_copy, frame_idx)
-        fig, (ax1, ax2) = plt.subplots(1, 2)
+    _, velodyne_raw_bev_P, _ = process_frame(np.concatenate([Pt, np.zeros((Pt.shape[0], 1))], axis=1), 0, frame_idx - 1)
+    _, velodyne_raw_bev_Q, _ = process_frame(np.concatenate([Q, np.zeros((Q.shape[0], 1))], axis=1), 0, frame_idx)
+    _, velodyne_frame_transformed_copy_bev, _ = process_frame(velodyne_frame_transformed_copy, 0, frame_idx - 1)
+    _, velodyne_frame_prev_copy_bev, _ = process_frame(velodyne_frame_prev_copy, 0, frame_idx)
+    fig, (ax1, ax2) = plt.subplots(1, 2)
 
-        map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
-        ax1.set_xticks([0, (map_size // 2), map_size - 1])
-        ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax1.set_yticks([0, (map_size // 2), map_size - 1])
-        ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax1.set_xlabel('X [meters]', fontsize=20)
-        ax1.set_ylabel('Y [meters]', fontsize=20)
-        ax1.set_title('Instantaneous Point Cloud')
-        ax1.imshow(velodyne_frame_transformed_copy_bev + velodyne_frame_prev_copy_bev, vmin=0.0, vmax=1.0)
+    map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
+    ax1.set_xticks([0, (map_size // 2), map_size - 1])
+    ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax1.set_yticks([0, (map_size // 2), map_size - 1])
+    ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax1.set_xlabel('X [meters]', fontsize=20)
+    ax1.set_ylabel('Y [meters]', fontsize=20)
+    ax1.set_title('Instantaneous Point Cloud')
+    ax1.imshow(velodyne_frame_transformed_copy_bev + velodyne_frame_prev_copy_bev, vmin=0.0, vmax=1.0)
 
-        ax2.set_xticks([0, (map_size // 2), map_size - 1])
-        ax2.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax2.set_yticks([0, (map_size // 2), map_size - 1])
-        ax2.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
-        ax2.set_xlabel('X [meters]', fontsize=20)
-        ax2.set_ylabel('Y [meters]', fontsize=20)
-        ax2.set_title('Instantaneous Point Cloud')
-        ax2.imshow(velodyne_raw_bev_Q + velodyne_raw_bev_P, vmin=0.0, vmax=1.0)
+    ax2.set_xticks([0, (map_size // 2), map_size - 1])
+    ax2.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax2.set_yticks([0, (map_size // 2), map_size - 1])
+    ax2.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+    ax2.set_xlabel('X [meters]', fontsize=20)
+    ax2.set_ylabel('Y [meters]', fontsize=20)
+    ax2.set_title('Instantaneous Point Cloud')
+    ax2.imshow(velodyne_raw_bev_Q + velodyne_raw_bev_P, vmin=0.0, vmax=1.0)
 
-        plt.show()
-
-    return x_icp_diff, y_icp_diff, yaw_icp_diff
+    figure = plt.gcf()  # get current figure
+    figure.set_size_inches(20, 20)
+    ram = io.BytesIO()
+    plt.savefig(ram, format='png', dpi=100)
+    ram.seek(0)
+    im = Image.open(ram)
+    im2 = im.convert('RGB').convert('P', palette=Image.ADAPTIVE)
+    im2.save("../../Results/{}_ICP_Matching/{:04d}.png".format(folder, frame_idx), format='PNG')
+    return e_icp_diff, n_icp_diff, yaw_icp_diff
 
 
 def transform_velodyne(velodyne_frame, curr_e, curr_n, curr_u, curr_yaw, velo_to_imu_R, velo_to_imu_t):
     velodyne_frame_copy = velodyne_frame.copy()
-    # print(velo_to_imu_R)
-    # print(velo_to_imu_t)
     velodyne_frame_copy = np.dot(velodyne_frame_copy, velo_to_imu_R) + velo_to_imu_t.T
     R = np.identity(4)
     R[0:2, 0:2] = np.array([[np.cos(curr_yaw), np.sin(curr_yaw)], [-np.sin(curr_yaw), np.cos(curr_yaw)]]).reshape(2, 2)
     t = np.array([curr_n, -curr_e, curr_u, 0]).reshape(4, 1)
-    # print(t)
     velodyne_frame_copy = (np.dot(R, velodyne_frame_copy.T) + t).T
     return velodyne_frame_copy
 
@@ -533,8 +531,6 @@ def main():
 
     fig, (ax) = plt.subplots(1, 1)
     ax.plot(lon, lat, 'b')
-    # ax.set_xlim(((lon[0] + lon[-1]) / 2) - 0.001, ((lon[0] + lon[-1]) / 2) + 0.001)
-    # ax.set_ylim(((lat[0] + lat[-1]) / 2) - 0.001, ((lat[0] + lat[-1]) / 2) + 0.001)
     ax.set_aspect('equal', adjustable='box')
     ax.set_xlabel('Longitude [degrees]', fontsize=20)
     ax.set_ylabel('Latitude [degrees]', fontsize=20)
@@ -595,13 +591,6 @@ def main():
     # convert roll pitch and yaw from ENU to NED
     rpy_enu = np.zeros((frame_count, 3))
     rpy_enu[:, :] = oxts[:, [4, 5, 6]]
-    # transform = np.array([
-    #     [1, 0, 0],
-    #     [0, -1, 0],
-    #     [0, 0, -1]
-    # ])
-    # rpy_in_ned = np.matmul(transform, np.transpose(rpy_enu))
-    # rpy_in_ned = np.transpose(rpy_in_ned)
     rpy_in_ned = rpy_enu
     rpy_in_ned[:, 2] = -rpy_in_ned[:, 2] + math.pi/2
     ax3.plot(range(0, frame_count), rpy_in_ned[:, 0], color='blue', linestyle='solid', markersize=1)
@@ -633,7 +622,9 @@ def main():
     plt.show()
 
     print("Creating csv file for Google My Maps")
-    long_lat_path = os.path.join(RESULTS_PATH, "long_lat.csv")
+    long_lat_path = os.path.join(RESULTS_PATH, "Geodetic coordinate system", "long_lat.csv")
+    if os.path.isfile(long_lat_path):
+        os.remove(long_lat_path)
     df = pd.DataFrame(data=oxts[:, [1, 2]], columns=["lat", "long"])
     df.to_csv(long_lat_path, index=True)
 
@@ -651,11 +642,6 @@ def main():
         velodyne_file = open(velodyne_file_path, 'wb')
         pickle.dump(velodyne, velodyne_file)
         velodyne_file.close()
-
-    # TODO: this is a redundant print, should probably remove it
-    print("x: {}..{}".format(velodyne["min_x"], velodyne["max_x"]))
-    print("y: {}..{}".format(velodyne["min_y"], velodyne["max_y"]))
-    print("z: {}..{}".format(velodyne["min_z"], velodyne["max_z"]))
 
     # calculate the size of the complete map, I'm ignoring the altitude here
     # notice that (x,y) and (e,n) are in meters while (u,v) are the integer coordinates of the occupancy map
@@ -680,15 +666,11 @@ def main():
 
     # setup noisy samples for section 3
     enu_noise = enu + np.concatenate((np.random.normal(0, 0.5, (enu.shape[0], 2)), np.zeros((enu.shape[0], 1))), axis=1)
-    # enu_noise = enu.copy() # + np.concatenate(( np.zeros((enu.shape[0], 1)), 0.5 * np.ones((enu.shape[0], 1)), np.zeros((enu.shape[0], 1)) ), axis=1)
+    # enu_noise = enu.copy()
     yaw_noise = yaw + np.random.normal(0, 0.01, yaw.shape[0])
     # yaw_noise = yaw.copy()
-    # enu_noise[1, 1] += 1.5
-    # enu_noise[2, 1] += 0.5
-    # print("enu_noise:")
-    # print(enu_noise[0:3, :])
-    # enu_noise[0, :] = enu[0, :]
-    # yaw_noise[0] = yaw[0]
+    enu_noise[0, 0:2] = enu[0, 0:2]
+    yaw_noise[0] = yaw[0]
 
     e_noise_icp = [float(enu_noise[0, 0])]
     n_noise_icp = [float(enu_noise[0, 1])]
@@ -718,82 +700,8 @@ def main():
     plt.show()
 
     configs = [
-        {
-            "folder": "occupancy_map_1_hit_0.7_miss_0.4_occ_threshold_0.8",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.8,
-            "enu_vec": enu,
-            "yaw_vec": yaw,
-            "is_animation": True,
-            "apply_icp": False
-        },
-        {
-            "folder": "occupancy_map_2_hit_0.9_miss_0.1_occ_threshold_0.8",
-            "hit": 0.9,
-            "miss": 0.1,
-            "occ_threshold": 0.8,
-            "enu_vec": enu,
-            "yaw_vec": yaw,
-            "is_animation": False,
-            "apply_icp": False
-        },
-        {
-            "folder": "occupancy_map_3_hit_0.6_miss_0.4_occ_threshold_0.8",
-            "hit": 0.6,
-            "miss": 0.4,
-            "occ_threshold": 0.8,
-            "enu_vec": enu,
-            "yaw_vec": yaw,
-            "is_animation": False,
-            "apply_icp": False
-        },
-        {
-            "folder": "occupancy_map_4_hit_0.7_miss_0.4_occ_threshold_0.75",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.75,
-            "enu_vec": enu,
-            "yaw_vec": yaw,
-            "is_animation": False,
-            "apply_icp": False
-        },
-        {
-            "folder": "occupancy_map_5_hit_0.7_miss_0.4_occ_threshold_0.9",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.9,
-            "enu_vec": enu,
-            "yaw_vec": yaw,
-            "is_animation": False,
-            "apply_icp": False
-        },
-        {
-            "description": "section 3b - noisy east, north and yaw",
-            "folder": "occupancy_map_6_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.8,
-            "enu_vec": enu_noise,
-            "yaw_vec": yaw_noise,
-            "is_animation": True,
-            "apply_icp": False
-        },
-        {
-            "description": "section 3b - noisy east, north and yaw + icp correction",
-            "folder": "occupancy_map_7_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
-            "hit": 0.7,
-            "miss": 0.4,
-            "occ_threshold": 0.8,
-            "enu_vec": enu_noise,
-            "yaw_vec": yaw_noise,
-            "is_animation": True,
-            "apply_icp": True
-        },
-
         # {
-        #     "description": "section 3b - noisy east, north and yaw",
-        #     "folder": "occupancy_map_8_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
+        #     "folder": "occupancy_map_1_hit_0.7_miss_0.4_occ_threshold_0.8",
         #     "hit": 0.7,
         #     "miss": 0.4,
         #     "occ_threshold": 0.8,
@@ -803,8 +711,82 @@ def main():
         #     "apply_icp": False
         # },
         # {
+        #     "folder": "occupancy_map_2_hit_0.9_miss_0.1_occ_threshold_0.8",
+        #     "hit": 0.9,
+        #     "miss": 0.1,
+        #     "occ_threshold": 0.8,
+        #     "enu_vec": enu,
+        #     "yaw_vec": yaw,
+        #     "is_animation": False,
+        #     "apply_icp": False
+        # },
+        # {
+        #     "folder": "occupancy_map_3_hit_0.6_miss_0.4_occ_threshold_0.8",
+        #     "hit": 0.6,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.8,
+        #     "enu_vec": enu,
+        #     "yaw_vec": yaw,
+        #     "is_animation": False,
+        #     "apply_icp": False
+        # },
+        # {
+        #     "folder": "occupancy_map_4_hit_0.7_miss_0.4_occ_threshold_0.75",
+        #     "hit": 0.7,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.75,
+        #     "enu_vec": enu,
+        #     "yaw_vec": yaw,
+        #     "is_animation": False,
+        #     "apply_icp": False
+        # },
+        # {
+        #     "folder": "occupancy_map_5_hit_0.7_miss_0.4_occ_threshold_0.9",
+        #     "hit": 0.7,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.9,
+        #     "enu_vec": enu,
+        #     "yaw_vec": yaw,
+        #     "is_animation": False,
+        #     "apply_icp": False
+        # },
+        # {
         #     "description": "section 3b - noisy east, north and yaw",
-        #     "folder": "occupancy_map_9_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
+        #     "folder": "occupancy_map_6_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
+        #     "hit": 0.7,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.8,
+        #     "enu_vec": enu_noise,
+        #     "yaw_vec": yaw_noise,
+        #     "is_animation": True,
+        #     "apply_icp": False
+        # },
+        # {
+        #     "description": "section 3b - noisy east, north and yaw + icp correction",
+        #     "folder": "occupancy_map_7_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
+        #     "hit": 0.7,
+        #     "miss": 0.4,
+        #     "occ_threshold": 0.8,
+        #     "enu_vec": enu_noise,
+        #     "yaw_vec": yaw_noise,
+        #     "is_animation": True,
+        #     "apply_icp": True
+        # },
+
+        {
+            "description": "section 3b - noisy east, north and yaw + icp correction + with correction threshold",
+            "folder": "occupancy_map_8_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp_with_correction_threshold",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.8,
+            "enu_vec": enu_noise,
+            "yaw_vec": yaw_noise,
+            "is_animation": True,
+            "apply_icp": True
+        },
+        # {
+        #     "description": "section 3b - noisy east, north and yaw + icp correction",
+        #     "folder": "occupancy_map_8_hit_0.7_miss_0.4_occ_threshold_0.8_less_noise_icp",
         #     "hit": 0.7,
         #     "miss": 0.4,
         #     "occ_threshold": 0.8,
@@ -873,57 +855,49 @@ def main():
                 #
                 # plt.show()
 
-                e_icp_diff, n_icp_diff, yaw_icp_diff = calc_icp(velodyne_frame_transformed, velodyne_frame_prev_transformed, frame_idx)
+                e_icp_diff, n_icp_diff, yaw_icp_diff = calc_icp(velodyne_frame_transformed, velodyne_frame_prev_transformed, frame_idx, config['folder'])
 
                 # build noise vs ICP corrected graph
-                # e_noise_icp.append(float(enu_from_config[frame_idx, 0]) + float(e_icp_diff))
-                # n_noise_icp.append(float(enu_from_config[frame_idx, 1]) + float(n_icp_diff))
-                # yaw_noise_icp.append(float(yaw_from_config[frame_idx]) + float(yaw_icp_diff))
 
-                # radius = np.linalg.norm([x_icp_diff, y_icp_diff])
-                # print(radius)
-                # icp_corrected_e = float(enu_from_config[frame_idx, 0]) - float(np.sin(yaw_noise_icp[-1])*radius)
-                # icp_corrected_n = float(enu_from_config[frame_idx, 1]) - float(np.sin(yaw_noise_icp[-1] + np.pi/2)*radius)
-                # icp_corrected_yaw = float(yaw_from_config[frame_idx]) - float(yaw_icp_diff)  # TODO: maybe should be above e,n
+                # only update e,n,yaw if the detected noise is within a reasonable range
+                if abs(float(n_icp_diff)) < 1 \
+                    and abs(float(e_icp_diff)) < 1:
+                    icp_corrected_e -= float(n_icp_diff)
+                    icp_corrected_n += float(e_icp_diff)
+                if abs(float(yaw_icp_diff)) < 0.05:
+                    icp_corrected_yaw -= float(yaw_icp_diff)
 
-                icp_corrected_e -= float(n_icp_diff)
-                icp_corrected_n += float(e_icp_diff)
-                icp_corrected_yaw -= float(yaw_icp_diff)
                 e_noise_icp.append(icp_corrected_e)
                 n_noise_icp.append(icp_corrected_n)
                 yaw_noise_icp.append(icp_corrected_yaw)
-                # e_noise_icp.append(float(enu_from_config[frame_idx, 0]) - float(np.cos(np.pi/2+yaw_noise_icp[-1])*radius))
-                # n_noise_icp.append(float(enu_from_config[frame_idx, 1]) - float(np.cos(np.pi/2+yaw_noise_icp[-1] + np.pi/2)*radius))
-                # e_noise_icp.append(float(enu_from_config[frame_idx, 0]) - float(e_icp_diff))
-                # n_noise_icp.append(float(enu_from_config[frame_idx, 1]) - float(n_icp_diff))
-                #         yaw_noise_icp.append(float(yaw_from_config[frame_idx]) - float(yaw_icp_diff))
-                # e_noise_icp.append(float(e_icp_diff))
-                # n_noise_icp.append(float(n_icp_diff))
-                # yaw_noise_icp.append(float(yaw_icp_diff))
-                # e_noise_icp.append(enu_from_config[frame_idx, 0] + t_e_diff + float(e_icp_diff))
-                # n_noise_icp.append(enu_from_config[frame_idx, 1] + t_n_diff + float(n_icp_diff))
-                # yaw_noise_icp.append(yaw_from_config[frame_idx] + theta + float(yaw_icp_diff))
 
-                # if apply_icp and frame_idx > 1 and frame_idx % 5 == 0:
-                #     fig, (ax1, ax2) = plt.subplots(1, 2)
-                #     ax1.plot(enu[:, 0], enu[:, 1], color='b', linestyle='solid', markersize=1)
-                #     ax1.plot(enu_noise[:, 0], enu_noise[:, 1], color='r', linestyle='solid', markersize=1)
-                #     ax1.plot(e_noise_icp, n_noise_icp, color='g', linestyle='solid', markersize=1)
-                #     ax1.set_aspect('equal', adjustable='box')
-                #     ax1.set_xlabel('Longitude [degrees]', fontsize=20)
-                #     ax1.set_ylabel('Latitude [degrees]', fontsize=20)
-                #     ax1.legend(["Raw lon/lat samples", "Samples with Gaussian noise sigma=0.000005 deg"],
-                #                prop={"size": 20},
-                #                loc="best")
-                #
-                #     ax2.plot(range(0, frame_count), yaw, color='b', linestyle='solid', markersize=1)
-                #     ax2.plot(range(0, frame_count), yaw_noise[:], color='r', linestyle='solid', markersize=1)
-                #     ax2.plot(range(0, len(yaw_noise_icp)), yaw_noise_icp, color='g', linestyle='solid', markersize=1)
-                #     ax2.set_xlabel('Frame Index', fontsize=20)
-                #     ax2.set_ylabel('Yaw [rad]', fontsize=20)
-                #     ax2.legend(["Raw yaw samples", "yaw with Gaussian noise, sigma=0.01 rad"], prop={"size": 20},
-                #                loc="best")
-                #     plt.show()
+                fig, (ax1, ax2) = plt.subplots(1, 2)
+                ax1.plot(enu[:, 0], enu[:, 1], color='b', linestyle='solid', markersize=1)
+                ax1.plot(enu_noise[:, 0], enu_noise[:, 1], color='r', linestyle='solid', markersize=1)
+                ax1.plot(e_noise_icp, n_noise_icp, color='g', linestyle='solid', markersize=1)
+                ax1.set_aspect('equal', adjustable='box')
+                ax1.set_xlabel('East [meters]', fontsize=20)
+                ax1.set_ylabel('North [meters]', fontsize=20)
+                ax1.legend(["Raw enu", "enu with noise (sigma=0.5 meters)", "ICP corrected enu"],
+                           prop={"size": 15},
+                           loc="best")
+
+                ax2.plot(range(0, frame_count), yaw, color='b', linestyle='solid', markersize=1)
+                ax2.plot(range(0, frame_count), yaw_noise[:], color='r', linestyle='solid', markersize=1)
+                ax2.plot(range(0, len(yaw_noise_icp)), yaw_noise_icp, color='g', linestyle='solid', markersize=1)
+                ax2.set_xlabel('Frame Index', fontsize=20)
+                ax2.set_ylabel('Yaw [rad]', fontsize=20)
+                ax2.legend(["Raw yaw", "Yaw with noise (sigma=0.01 rad)", "ICP corrected yaw"], prop={"size": 15},
+                           loc="best")
+
+                figure = plt.gcf()  # get current figure
+                figure.set_size_inches(20, 20)
+                ram = io.BytesIO()
+                plt.savefig(ram, format='png', dpi=100)
+                ram.seek(0)
+                im = Image.open(ram)
+                im2 = im.convert('RGB').convert('P', palette=Image.ADAPTIVE)
+                im2.save("../../Results/{}/real_noisy_and_corrected_data.png".format(config['folder'], frame_idx), format='PNG')
 
             enu_from_config[frame_idx, 0] = icp_corrected_e
             enu_from_config[frame_idx, 1] = icp_corrected_n

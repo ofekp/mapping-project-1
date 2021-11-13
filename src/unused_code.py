@@ -71,29 +71,45 @@
 
 
 
-def transform_velodyne(velodyne_frame, curr_e, prev_e, curr_n, prev_n, curr_yaw, prev_yaw):
-    velodyne_frame_copy = velodyne_frame.copy()
-    theta_diff = -(curr_yaw - prev_yaw)  # yaw_from_config[frame_idx - 1]
-    # theta = -yaw_noise_icp[-1]  # yaw_from_config[frame_idx - 1]
-    R = np.identity(4)
-    R[0:2, 0:2] = np.array([[np.cos(theta_diff), -np.sin(theta_diff)], [np.sin(theta_diff), np.cos(theta_diff)]]).reshape(2, 2)
-    print(R)
-    print(curr_yaw)
-    print(theta_diff)
-    # radius = np.linalg.norm([(enu_from_config[frame_idx, 0] - e_noise_icp[-1]), (enu_from_config[frame_idx, 1] - n_noise_icp[-1])])
-    e_diff = (curr_e - prev_e)
-    n_diff = (curr_n - prev_n)
-    print(e_diff)
-    print(n_diff)
-    # t = -np.dot(R, np.array([e_diff, n_diff, 0, 0])).reshape(4, 1)
-    t_x_diff = np.cos(theta_diff)*n_diff + np.sin(theta_diff)*(e_diff) #(enu_from_config[frame_idx, 0] - e_noise_icp[-1])  # enu_from_config[frame_idx - 1, 0])
-    t_y_diff = -np.sin(theta_diff)*n_diff + np.cos(theta_diff)*(e_diff)  #(enu_from_config[frame_idx, 1] - n_noise_icp[-1])  # enu_from_config[frame_idx - 1, 1])
-    # t_e_diff = enu_from_config[frame_idx, 0] - e_noise_icp[-1]
-    # t_n_diff = enu_from_config[frame_idx, 1] - n_noise_icp[-1]
-    # t = np.array([t_x_diff, -t_y_diff, 0.0, 0.0]).reshape(4, 1)
-    t = np.array([-t_x_diff, t_y_diff, 0, 0]).reshape(4, 1)
-    print(t)
-    # print("going to apply t {}".format(t))
-    # velodyne_frame = np.rot90(velodyne_raw_bev, 2)
-    velodyne_frame_copy = (np.dot(R, velodyne_frame_copy.T) + t).T
-    return velodyne_frame_copy
+# def transform_velodyne(velodyne_frame, curr_e, prev_e, curr_n, prev_n, curr_yaw, prev_yaw):
+#     velodyne_frame_copy = velodyne_frame.copy()
+#     theta_diff = -(curr_yaw - prev_yaw)  # yaw_from_config[frame_idx - 1]
+#     # theta = -yaw_noise_icp[-1]  # yaw_from_config[frame_idx - 1]
+#     R = np.identity(4)
+#     R[0:2, 0:2] = np.array([[np.cos(theta_diff), -np.sin(theta_diff)], [np.sin(theta_diff), np.cos(theta_diff)]]).reshape(2, 2)
+#     print(R)
+#     print(curr_yaw)
+#     print(theta_diff)
+#     # radius = np.linalg.norm([(enu_from_config[frame_idx, 0] - e_noise_icp[-1]), (enu_from_config[frame_idx, 1] - n_noise_icp[-1])])
+#     e_diff = (curr_e - prev_e)
+#     n_diff = (curr_n - prev_n)
+#     print(e_diff)
+#     print(n_diff)
+#     # t = -np.dot(R, np.array([e_diff, n_diff, 0, 0])).reshape(4, 1)
+#     t_x_diff = np.cos(theta_diff)*n_diff + np.sin(theta_diff)*(e_diff) #(enu_from_config[frame_idx, 0] - e_noise_icp[-1])  # enu_from_config[frame_idx - 1, 0])
+#     t_y_diff = -np.sin(theta_diff)*n_diff + np.cos(theta_diff)*(e_diff)  #(enu_from_config[frame_idx, 1] - n_noise_icp[-1])  # enu_from_config[frame_idx - 1, 1])
+#     # t_e_diff = enu_from_config[frame_idx, 0] - e_noise_icp[-1]
+#     # t_n_diff = enu_from_config[frame_idx, 1] - n_noise_icp[-1]
+#     # t = np.array([t_x_diff, -t_y_diff, 0.0, 0.0]).reshape(4, 1)
+#     t = np.array([-t_x_diff, t_y_diff, 0, 0]).reshape(4, 1)
+#     print(t)
+#     # print("going to apply t {}".format(t))
+#     # velodyne_frame = np.rot90(velodyne_raw_bev, 2)
+#     velodyne_frame_copy = (np.dot(R, velodyne_frame_copy.T) + t).T
+#     return velodyne_frame_copy
+
+
+# redundant print
+# print("x: {}..{}".format(velodyne["min_x"], velodyne["max_x"]))
+# print("y: {}..{}".format(velodyne["min_y"], velodyne["max_y"]))
+# print("z: {}..{}".format(velodyne["min_z"], velodyne["max_z"]))
+
+
+# fig, (ax) = plt.subplots(1, 1)
+# ax.plot(lon, lat, 'b')
+# # ax.set_xlim(((lon[0] + lon[-1]) / 2) - 0.001, ((lon[0] + lon[-1]) / 2) + 0.001)
+# # ax.set_ylim(((lat[0] + lat[-1]) / 2) - 0.001, ((lat[0] + lat[-1]) / 2) + 0.001)
+# ax.set_aspect('equal', adjustable='box')
+# ax.set_xlabel('Longitude [degrees]', fontsize=20)
+# ax.set_ylabel('Latitude [degrees]', fontsize=20)
+# plt.show()
