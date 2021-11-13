@@ -228,10 +228,6 @@ def inverse_sensor_model_async(car_pos_x, car_pos_y, curr_cell_center_x, curr_ce
 def inverse_sensor_model(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_center_y, yaw, velodyne_filtered, l_occ, l_free):
     r = np.linalg.norm(np.array([curr_cell_center_x - car_pos_x, curr_cell_center_y - car_pos_y]))
     phi = np.arctan2(curr_cell_center_y - car_pos_y, curr_cell_center_x - car_pos_x) - yaw
-    # print("{} {} {} {} {}".format(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_center_y, phi))
-    # exit(1)
-    # phi = phi - math.pi if phi > math.pi else phi + math.pi
-    # phi =  phi + math.pi
     min_angle_diff = None
     min_angle_diff_sample = None
     min_angle_diff_sample_angle = None
@@ -291,9 +287,7 @@ def find_center_of_mass_xy(X):
 
 def update_occupancy_map(velodyne_frame_filtered, occupancy_map, car_pos_x, car_pos_y, yaw, l_occ, l_free, is_async=True):
     velodyne_frame_filtered_copy = velodyne_frame_filtered.copy()
-    # velodyne_frame_filtered_copy = transform_velodyne(velodyne_frame_filtered_copy, 0, 0, 0, yaw, np.identity(4), np.zeros(4).reshape(4, 1))
-    velodyne_frame_filtered_copy = np.concatenate((velodyne_frame_filtered_copy, np.arctan2(velodyne_frame_filtered_copy[:, 0], -velodyne_frame_filtered_copy[:, 1]).reshape(velodyne_frame_filtered_copy.shape[0], 1)), axis=1)
-    # velodyne_filtered = np.concatenate((velodyne_filtered, np.arctan2(-velodyne_filtered[:, 1], velodyne_filtered[:, 0]).reshape(velodyne_filtered.shape[0], 1)), axis=1)
+    velodyne_frame_filtered_copy = np.concatenate((velodyne_frame_filtered_copy, np.arctan2(-velodyne_frame_filtered_copy[:, 0], -velodyne_frame_filtered_copy[:, 1]).reshape(velodyne_frame_filtered_copy.shape[0], 1)), axis=1)
     velodyne_frame_filtered_copy = velodyne_frame_filtered_copy[velodyne_frame_filtered_copy[:, 4].argsort()]
     max_range_uv = int(MAX_RANGE_RADIUS_METERS // MAP_RESOLUTION)
     car_pos_u = int(car_pos_x // MAP_RESOLUTION)
@@ -337,21 +331,24 @@ def render_frame(img, velodyne_raw_bev, occupancy, frame_idx, folder):
     axbig.set_axis_off()
     axbig.imshow(img)
 
-    map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
+    bev_img_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
 
-    ax1.set_xticks([0, (map_size // 2), map_size - 1])
+    ax1.set_xticks([0, (bev_img_size // 2), bev_img_size - 2])
     ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-    ax1.set_yticks([0, (map_size // 2), map_size - 1])
+    ax1.set_yticks([0, (bev_img_size // 2), bev_img_size - 2])
     ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
     ax1.set_xlabel('X [meters]', fontsize=20)
     ax1.set_ylabel('Y [meters]', fontsize=20)
     ax1.set_title('Instantaneous Point Cloud')
     ax1.imshow(velodyne_raw_bev, vmin=0.0, vmax=1.0)
 
-    ax2.set_xticks([0, (map_size // 2), map_size - 1])
-    ax2.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-    ax2.set_yticks([0, (map_size // 2), map_size - 1])
-    ax2.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+    map_e_size_meters = occupancy.shape[1] * MAP_RESOLUTION
+    map_n_size_meters = occupancy.shape[0] * MAP_RESOLUTION
+    ax2.set_xticks([0, occupancy.shape[1] - 1])
+    ax2.set_xticklabels([0.0, map_e_size_meters], fontsize=20)
+    ax2.set_yticks([0, occupancy.shape[0] - 1])
+    ax2.set_yticklabels([map_n_size_meters, 0.0], fontsize=20)
+
     ax2.set_xlabel('X [meters]', fontsize=20)
     ax2.set_ylabel('Y [meters]', fontsize=20)
     ax2.set_title('Occupancy Map')
@@ -372,8 +369,9 @@ def render_frame(img, velodyne_raw_bev, occupancy, frame_idx, folder):
     plt.clf()
 
 
-def process_frame(velodyne_frame, frame_idx):
+def process_frame(velodyne_frame, yaw, frame_idx):
     velodyne_frame_copy = velodyne_frame.copy()
+    velodyne_frame_copy = transform_velodyne(velodyne_frame_copy, 0, 0, 0, yaw, np.identity(4), np.zeros(4).reshape(4, 1))
     map_size = int((2 * MAX_RANGE_RADIUS_METERS) // MAP_RESOLUTION)
     velodyne_frame_copy[:, 0] += MAX_RANGE_RADIUS_METERS
     velodyne_frame_copy[:, 0] //= MAP_RESOLUTION
@@ -689,8 +687,8 @@ def main():
     # enu_noise[2, 1] += 0.5
     # print("enu_noise:")
     # print(enu_noise[0:3, :])
-    enu_noise[0, :] = enu[0, :]
-    yaw_noise[0] = yaw[0]
+    # enu_noise[0, :] = enu[0, :]
+    # yaw_noise[0] = yaw[0]
 
     e_noise_icp = [float(enu_noise[0, 0])]
     n_noise_icp = [float(enu_noise[0, 1])]
@@ -700,8 +698,8 @@ def main():
     # enu_noise[1, 1] += 0.7
     # yaw_noise[1] += 0.03
 
-    print(enu_noise[0:11, :])
-    print(yaw_noise[0:5])
+    # print(enu_noise[0:11, :])
+    # print(yaw_noise[0:5])
 
     print("Iterative Closest Point (ICP)")
     fig, (ax1, ax2) = plt.subplots(1, 2)
@@ -730,91 +728,91 @@ def main():
             "is_animation": True,
             "apply_icp": False
         },
-        # {
-        #     "folder": "occupancy_map_2_hit_0.9_miss_0.1_occ_threshold_0.8",
-        #     "hit": 0.9,
-        #     "miss": 0.1,
-        #     "occ_threshold": 0.8,
-        #     "enu_vec": enu,
-        #     "yaw_vec": yaw,
-        #     "is_animation": False,
-        #     "apply_icp": False
-        # },
-        # {
-        #     "folder": "occupancy_map_3_hit_0.6_miss_0.4_occ_threshold_0.8",
-        #     "hit": 0.6,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.8,
-        #     "enu_vec": enu,
-        #     "yaw_vec": yaw,
-        #     "is_animation": False,
-        #     "apply_icp": False
-        # },
-        # {
-        #     "folder": "occupancy_map_4_hit_0.7_miss_0.4_occ_threshold_0.75",
-        #     "hit": 0.7,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.75,
-        #     "enu_vec": enu,
-        #     "yaw_vec": yaw,
-        #     "is_animation": False,
-        #     "apply_icp": False
-        # },
-        # {
-        #     "folder": "occupancy_map_5_hit_0.7_miss_0.4_occ_threshold_0.9",
-        #     "hit": 0.7,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.9,
-        #     "enu_vec": enu,
-        #     "yaw_vec": yaw,
-        #     "is_animation": False,
-        #     "apply_icp": False
-        # },
-        # {
-        #     "description": "section 3b - noisy east, north and yaw",
-        #     "folder": "occupancy_map_6_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
-        #     "hit": 0.7,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.8,
-        #     "enu_vec": enu_noise,
-        #     "yaw_vec": yaw_noise,
-        #     "is_animation": True,
-        #     "apply_icp": False
-        # },
-        # {
-        #     "description": "section 3b - noisy east, north and yaw + icp correction",
-        #     "folder": "occupancy_map_7_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
-        #     "hit": 0.7,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.8,
-        #     "enu_vec": enu_noise,
-        #     "yaw_vec": yaw_noise,
-        #     "is_animation": True,
-        #     "apply_icp": True
-        # },
+        {
+            "folder": "occupancy_map_2_hit_0.9_miss_0.1_occ_threshold_0.8",
+            "hit": 0.9,
+            "miss": 0.1,
+            "occ_threshold": 0.8,
+            "enu_vec": enu,
+            "yaw_vec": yaw,
+            "is_animation": False,
+            "apply_icp": False
+        },
+        {
+            "folder": "occupancy_map_3_hit_0.6_miss_0.4_occ_threshold_0.8",
+            "hit": 0.6,
+            "miss": 0.4,
+            "occ_threshold": 0.8,
+            "enu_vec": enu,
+            "yaw_vec": yaw,
+            "is_animation": False,
+            "apply_icp": False
+        },
+        {
+            "folder": "occupancy_map_4_hit_0.7_miss_0.4_occ_threshold_0.75",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.75,
+            "enu_vec": enu,
+            "yaw_vec": yaw,
+            "is_animation": False,
+            "apply_icp": False
+        },
+        {
+            "folder": "occupancy_map_5_hit_0.7_miss_0.4_occ_threshold_0.9",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.9,
+            "enu_vec": enu,
+            "yaw_vec": yaw,
+            "is_animation": False,
+            "apply_icp": False
+        },
+        {
+            "description": "section 3b - noisy east, north and yaw",
+            "folder": "occupancy_map_6_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.8,
+            "enu_vec": enu_noise,
+            "yaw_vec": yaw_noise,
+            "is_animation": True,
+            "apply_icp": False
+        },
+        {
+            "description": "section 3b - noisy east, north and yaw + icp correction",
+            "folder": "occupancy_map_7_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.8,
+            "enu_vec": enu_noise,
+            "yaw_vec": yaw_noise,
+            "is_animation": True,
+            "apply_icp": True
+        },
 
-        # {
-        #     "description": "section 3b - noisy east, north and yaw",
-        #     "folder": "occupancy_map_8_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
-        #     "hit": 0.7,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.8,
-        #     "enu_vec": enu,
-        #     "yaw_vec": yaw,
-        #     "is_animation": True,
-        #     "apply_icp": False
-        # },
-        # {
-        #     "description": "section 3b - noisy east, north and yaw",
-        #     "folder": "occupancy_map_9_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
-        #     "hit": 0.7,
-        #     "miss": 0.4,
-        #     "occ_threshold": 0.8,
-        #     "enu_vec": enu_noise,
-        #     "yaw_vec": yaw_noise,
-        #     "is_animation": True,
-        #     "apply_icp": True
-        # },
+        {
+            "description": "section 3b - noisy east, north and yaw",
+            "folder": "occupancy_map_8_hit_0.7_miss_0.4_occ_threshold_0.8_noise",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.8,
+            "enu_vec": enu,
+            "yaw_vec": yaw,
+            "is_animation": True,
+            "apply_icp": False
+        },
+        {
+            "description": "section 3b - noisy east, north and yaw",
+            "folder": "occupancy_map_9_hit_0.7_miss_0.4_occ_threshold_0.8_noise_icp",
+            "hit": 0.7,
+            "miss": 0.4,
+            "occ_threshold": 0.8,
+            "enu_vec": enu_noise,
+            "yaw_vec": yaw_noise,
+            "is_animation": True,
+            "apply_icp": True
+        },
     ]
 
     # print("ENU Graph")
@@ -848,7 +846,7 @@ def main():
             icp_corrected_yaw = float(yaw_from_config[frame_idx])
             ts = int(time.time())
             velodyne_frame = velodyne["frames_raw"][frame_idx]
-            img, velodyne_raw_bev, _ = process_frame(velodyne_frame, frame_idx)
+            img, velodyne_raw_bev, _ = process_frame(velodyne_frame, yaw_from_config[frame_idx], frame_idx)
             velodyne_frame_filtered = filter_velodyne_data(velodyne_frame.copy())
             # if we apply ICP algorithm on the velodyne data the method update_occupancy_map will
             # use velodyne data from both frame_idx and from (frame_idx + 1)
