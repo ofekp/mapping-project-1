@@ -45,6 +45,10 @@ l_0 = 0  # in our case no information means a 0.5 prior, and in log-odds it eval
 
 
 def make_gif(folder):
+    """
+    :param folder: as taken from the configuration JSON which contains all the png files
+    :return: a gif movie from all the png files found in the folder, each frame duration is 0.1 seconds
+    """
     path = "../../Results/{}/".format(folder)
     with imageio.get_writer(os.path.join(path, 'movie.gif'), mode='I', duration=0.1) as writer:
         # oxts_data_path = os.path.join(OXTS_DATASET_PATH, 'data')
@@ -57,6 +61,12 @@ def make_gif(folder):
 
 
 def convert_lla_to_enu(lat, lon, alt):
+    """
+    :param lat: vector representing the latitude for each frame in the sequence
+    :param lon: vector representing the longitude for each frame in the sequence
+    :param alt: vector representing the altitude for each frame in the sequence
+    :return: a vector of dimension [number_of_frames x 3] with east, north, up data
+    """
     assert lat.shape[0] == lon.shape[0]
     assert lon.shape[0] == alt.shape[0]
     frame_count = lat.shape[0]
@@ -73,16 +83,33 @@ def convert_lla_to_enu(lat, lon, alt):
 
 
 def print_rand(log_line, prob=0.01):
+    """
+    Used mostly for debugging
+    :param log_line: the printed log line
+    :param prob: the probability in which to print that log line
+    """
     if random.uniform(0, 1) < prob:
         print(log_line)
 
 
-def log_odds(x):
-    return math.log(x / (1 - x))
+def log_odds(prob):
+    """
+    :param prob: a probability value
+    :return: log odds value of that probability
+    """
+    return math.log(prob / (1 - prob))
 
 
-def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx, folder):
-    velodyne_frame_transformed_copy = velodyne_frame_transformed.copy()
+def calc_icp(velodyne_frame, velodyne_frame_prev, frame_idx, folder):
+    """
+    :param velodyne_frame: a point cloud for the current frame [number_of_frames x 4]
+    :param velodyne_frame_prev: a point cloud for the previous frame [number_of_frames x 4]
+    :param frame_idx: the current frame index
+    :param folder: the folder in which to save the comparison of the cloud before and after ICP is applied
+    :return: the correction that needs to be applied on the current frame in order to fit it to the previous frame as
+             calculated by the Intersecting Closest Point algorithm
+    """
+    velodyne_frame_copy = velodyne_frame.copy()
     velodyne_frame_prev_copy = velodyne_frame_prev.copy()
 
     # we are looking for R and t to apply to P such that it will best fit Q
@@ -91,7 +118,7 @@ def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx, folder)
     Q = Q[np.linalg.norm(Q[:, 0:2], axis=1) > 1.5]
     Q = Q[Q[:, 2] > -0.3]
     tree = KDTree(Q)
-    P = velodyne_frame_transformed_copy[:, 0:3].copy()
+    P = velodyne_frame_copy[:, 0:3].copy()
     P = P[np.linalg.norm(P[:, 0:2], axis=1) > 1.5]
     P = P[P[:, 2] > -0.3]
     tt = np.zeros(3).reshape(3, 1)
@@ -172,10 +199,10 @@ def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx, folder)
     #                                                                                                z_icp_diff,
     #                                                                                                yaw_icp_diff))
 
-    _, velodyne_raw_bev_P, _ = process_frame(np.concatenate([Pt, np.zeros((Pt.shape[0], 1))], axis=1), 0, frame_idx - 1)
-    _, velodyne_raw_bev_Q, _ = process_frame(np.concatenate([Q, np.zeros((Q.shape[0], 1))], axis=1), 0, frame_idx)
-    _, velodyne_frame_transformed_copy_bev, _ = process_frame(velodyne_frame_transformed_copy, 0, frame_idx - 1)
-    _, velodyne_frame_prev_copy_bev, _ = process_frame(velodyne_frame_prev_copy, 0, frame_idx)
+    _, velodyne_raw_bev_P = process_frame(np.concatenate([Pt, np.zeros((Pt.shape[0], 1))], axis=1), 0, frame_idx - 1)
+    _, velodyne_raw_bev_Q = process_frame(np.concatenate([Q, np.zeros((Q.shape[0], 1))], axis=1), 0, frame_idx)
+    _, velodyne_frame_transformed_copy_bev = process_frame(velodyne_frame_copy, 0, frame_idx - 1)
+    _, velodyne_frame_prev_copy_bev = process_frame(velodyne_frame_prev_copy, 0, frame_idx)
     fig, (ax1, ax2) = plt.subplots(1, 2)
 
     map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
@@ -209,6 +236,20 @@ def calc_icp(velodyne_frame_transformed, velodyne_frame_prev, frame_idx, folder)
 
 
 def transform_velodyne(velodyne_frame, curr_e, curr_n, curr_u, curr_yaw, velo_to_imu_R, velo_to_imu_t):
+    """
+    :param velodyne_frame: the point cloud Velodyne data to project to the enu coord system
+           the dimensions should be [number_of_frames x 4]
+    :param curr_e: current east position
+    :param curr_n: current north position
+    :param curr_u: current up position
+    :param curr_yaw: current yaw
+    :param velo_to_imu_R: rotation transformation from the Velodyne sensor position to the IMU sensor position
+    :param velo_to_imu_t: translation transformation from the Velodyne sensor position to the IMU sensor position
+    :return: a point cloud [number_of_frames x 4] after the transformation to enu is applied
+             the transformation is comprised of two steps:
+             1. projecting the data to the IMU position
+             2. projecting the data according to the current east, north, up and yaw
+    """
     velodyne_frame_copy = velodyne_frame.copy()
     velodyne_frame_copy = np.dot(velodyne_frame_copy, velo_to_imu_R) + velo_to_imu_t.T
     R = np.identity(4)
@@ -219,11 +260,28 @@ def transform_velodyne(velodyne_frame, curr_e, curr_n, curr_u, curr_yaw, velo_to
 
 
 def inverse_sensor_model_async(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_center_y, yaw, velodyne_filtered, l_occ, l_free, u, v):
+    """
+    this method is used to asynchronously applies the method inverse_sensor_model
+    please see the rest of the details there
+    :param u: discrete value of the current horizontal position on the occupancy map
+    :param v: discrete value of the current vertical position on the occupancy map
+    """
     l = inverse_sensor_model(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_center_y, yaw, velodyne_filtered, l_occ, l_free)
     return u, v, l
 
 
 def inverse_sensor_model(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_center_y, yaw, velodyne_filtered, l_occ, l_free):
+    """
+    :param car_pos_x: car position along x axis in meters
+    :param car_pos_y: car position along y axis in meters
+    :param curr_cell_center_x: the cell center position along x axis in meters
+    :param curr_cell_center_y: the cell center position along y axis in meters
+    :param yaw: the current yaw of the car
+    :param velodyne_filtered: the Velodyne data after it has been filtered (by the method filter_velodyne_data)
+    :param l_occ: log-odds probability value for occupied cell
+    :param l_free: log-odds probability value for vacant (free) cell
+    :return: the log-odds probability to apply to the cell, one of l_0, l_free or l_occ is returned
+    """
     r = np.linalg.norm(np.array([curr_cell_center_x - car_pos_x, curr_cell_center_y - car_pos_y]))
     phi = np.arctan2(curr_cell_center_y - car_pos_y, curr_cell_center_x - car_pos_x) - yaw
     min_angle_diff = None
@@ -251,13 +309,14 @@ def inverse_sensor_model(car_pos_x, car_pos_y, curr_cell_center_x, curr_cell_cen
     elif r <= Zk:
         return l_free
 
-    assert False  # should not reach here
+    assert False  # should never reach here
 
 
 def filter_velodyne_data(velodyne_raw):
     """
     to ease the computation we first clean up non interesting points
       - points that are further than MAX_RANGE_RADIUS_METERS from the sensor
+      - points that are closer than MIN_RANGE_RADIUS_METERS to the sensor
       - points that are below 30cm off the ground
     """
     velodyne_filtered = np.array([]).reshape(0, 4)
@@ -277,13 +336,24 @@ def filter_velodyne_data(velodyne_raw):
 
 def find_center_of_mass_xy(X):
     """
-    :param X: of shape NxK where N is the number of samples and K is the dimension of the data
-    :return: the mean of X of shape 1xK
+    :param X: of shape [number_of_frames x 3]
+    :return: the mean of X along the first axis (across the frames) as a col vector of shape [3 x 1]
     """
     return X[:, 0:3].mean(axis=0).reshape(3, 1)
 
 
 def update_occupancy_map(velodyne_frame_filtered, occupancy_map, car_pos_x, car_pos_y, yaw, l_occ, l_free, is_async=True):
+    """
+    Updates the global occupancy map according to the inverse sensor model
+    :param velodyne_frame_filtered: the Velodyne data after it has been filtered (by the method filter_velodyne_data)
+    :param occupancy_map: the global occupancy map
+    :param car_pos_x: car position along x axis in meters
+    :param car_pos_y: car position along y axis in meters
+    :param yaw: the current yaw of the car
+    :param l_occ: log-odds probability value for occupied cell
+    :param l_free: log-odds probability value for vacant (free) cell
+    :param is_async: should the inverse sensor model be applied asynchronously for each cell
+    """
     velodyne_frame_filtered_copy = velodyne_frame_filtered.copy()
     velodyne_frame_filtered_copy = np.concatenate((velodyne_frame_filtered_copy, np.arctan2(-velodyne_frame_filtered_copy[:, 0], -velodyne_frame_filtered_copy[:, 1]).reshape(velodyne_frame_filtered_copy.shape[0], 1)), axis=1)
     velodyne_frame_filtered_copy = velodyne_frame_filtered_copy[velodyne_frame_filtered_copy[:, 4].argsort()]
@@ -313,6 +383,17 @@ def update_occupancy_map(velodyne_frame_filtered, occupancy_map, car_pos_x, car_
 
 
 def render_frame(img, velodyne_raw_bev, occupancy, frame_idx, folder):
+    """
+    Saves an image for the current frame containing:
+    1. the image from camera 2
+    2. the bird's eye view of the Velodyne data
+    3. the global occupancy map
+    :param img: the image from camera 2 as given by process_frame method
+    :param velodyne_raw_bev: a bird's eye view of the Velodyne data, as generated by process_frame method
+    :param occupancy: the global occupancy map
+    :param frame_idx: the current frame index
+    :param folder: as taken from the configuration JSON which contains all the png files
+    """
     fig, ((axtop1, axtop2), (ax1, ax2)) = plt.subplots(2, 2)
     fig.subplots_adjust(
         top=0.978,
@@ -368,6 +449,13 @@ def render_frame(img, velodyne_raw_bev, occupancy, frame_idx, folder):
 
 
 def process_frame(velodyne_frame, yaw, frame_idx):
+    """
+    :param velodyne_frame: the point cloud data from the Velodyne sensor for the current frame
+    :param yaw: the current yaw
+    :param frame_idx: the current frame index
+    :return: img - mpimg object of the relevant image from the dataset
+             velodyne_raw_bev - bird's eye view of the Velodyne data
+    """
     velodyne_frame_copy = velodyne_frame.copy()
     velodyne_frame_copy = transform_velodyne(velodyne_frame_copy, 0, 0, 0, yaw, np.identity(4), np.zeros(4).reshape(4, 1))
     map_size = int((2 * MAX_RANGE_RADIUS_METERS) // MAP_RESOLUTION)
@@ -386,27 +474,26 @@ def process_frame(velodyne_frame, yaw, frame_idx):
         velodyne_raw_bev[int(point[0]), int(point[1])] = max(velodyne_raw_bev[int(point[0]), int(point[1])], height_val)
     velodyne_raw_bev = np.rot90(velodyne_raw_bev, 2)
 
-    occupancy = np.zeros((map_size, map_size), dtype=int)
-    for point in velodyne_frame_copy:
-        if point[0] >= map_size or point[0] < 0 or point[1] >= map_size or point[1] < 0:
-            continue
-        height_val = point[2]
-        # we're looking for points that are 30cm above the ground, keeping in mind that the sensor is positioned
-        # on top of the car's roof at a height of VELODYNE_HEIGHT_METERS
-        if height_val > (ABOVE_GROUND_THRESHOLD - VELODYNE_HEIGHT_METERS):
-            occupancy[int(point[0]), int(point[1])] = 1
-    car_center = int(MAX_RANGE_RADIUS_METERS // MAP_RESOLUTION)
-    # I am taking into account the position of the sensor in relation to the car
-    occupancy[(car_center - 4):(car_center - 4 + 14), (car_center - 4):(car_center + 4)] = 2
-    occupancy = np.flip(occupancy, 1)  # Velodyne's y axis is flipped
-
     img_path = os.path.join(COLOR_IMAGE_DATASET_PATH, 'data', "{:010d}.png".format(frame_idx))
     img = mpimg.imread(img_path)
 
-    return img, velodyne_raw_bev, occupancy
+    return img, velodyne_raw_bev
 
 
 def load_velodyne():
+    """
+    Loads and parses the Velodyne data for all the frames in the sequence
+    :return: a JSON structure that includes the parsed Velodyne data for all the frames
+    {
+        "frames_raw": [np.array(), ...],   contains a numpy array of dim [number_of_frames x 4] for each frame
+        "min_x": float,   min and max values for all the dimensions of the Velodyne data
+        "max_x": float,
+        "min_y": float,
+        "max_y": float,
+        "min_z": float,
+        "max_z": float,
+    }
+    """
     velodyne_data_path = os.path.join(VELODYNE_DATASET_PATH, 'data')
     assert os.path.isdir(velodyne_data_path)
     pathlist = Path(velodyne_data_path).glob('**/*.bin')
@@ -828,7 +915,7 @@ def main():
             icp_corrected_yaw = float(yaw_from_config[frame_idx])
             ts = int(time.time())
             velodyne_frame = velodyne["frames_raw"][frame_idx]
-            img, velodyne_raw_bev, _ = process_frame(velodyne_frame, yaw_from_config[frame_idx], frame_idx)
+            img, velodyne_raw_bev = process_frame(velodyne_frame, yaw_from_config[frame_idx], frame_idx)
             velodyne_frame_filtered = filter_velodyne_data(velodyne_frame.copy())
             # if we apply ICP algorithm on the velodyne data the method update_occupancy_map will
             # use velodyne data from both frame_idx and from (frame_idx + 1)

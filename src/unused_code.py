@@ -113,3 +113,19 @@
 # ax.set_xlabel('Longitude [degrees]', fontsize=20)
 # ax.set_ylabel('Latitude [degrees]', fontsize=20)
 # plt.show()
+
+
+# builds a single occupancy map from a single frame
+# occupancy = np.zeros((map_size, map_size), dtype=int)
+# for point in velodyne_frame_copy:
+#     if point[0] >= map_size or point[0] < 0 or point[1] >= map_size or point[1] < 0:
+#         continue
+#     height_val = point[2]
+#     # we're looking for points that are 30cm above the ground, keeping in mind that the sensor is positioned
+#     # on top of the car's roof at a height of VELODYNE_HEIGHT_METERS
+#     if height_val > (ABOVE_GROUND_THRESHOLD - VELODYNE_HEIGHT_METERS):
+#         occupancy[int(point[0]), int(point[1])] = 1
+# car_center = int(MAX_RANGE_RADIUS_METERS // MAP_RESOLUTION)
+# # I am taking into account the position of the sensor in relation to the car
+# occupancy[(car_center - 4):(car_center - 4 + 14), (car_center - 4):(car_center + 4)] = 2
+# occupancy = np.flip(occupancy, 1)  # Velodyne's y axis is flipped
