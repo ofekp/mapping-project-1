@@ -53,9 +53,13 @@
 # # t_n_diff = enu_from_config[frame_idx - 1, 1]
 # t = np.array([t_e_diff, t_n_diff, 0.0, 0.0]).reshape(4, 1)
 # velodyne_frame_prev_filtered = (np.dot(R, velodyne_frame_prev_filtered.T) + t).T
+
+
+# print("e_icp_diff [{}] n_icp_diff [{}] yaw_icp_diff [{}]".format(e_icp_diff, n_icp_diff, yaw_icp_diff))
 # print("Expecting {} {} {}".format(enu_noise[frame_idx, 0] - enu[frame_idx, 0], enu_noise[frame_idx, 1] - enu[frame_idx, 1], yaw_noise[frame_idx] - yaw[frame_idx]))
 # print("noise {} {} {}".format(enu_noise[frame_idx, 0] - enu_noise[frame_idx - 1, 0], enu_noise[frame_idx, 1] - enu_noise[frame_idx - 1, 1], yaw_noise[frame_idx] - yaw_noise[frame_idx - 1]))
 # print("Totals {} {} {}".format(enu[frame_idx, 0] - enu[frame_idx - 1, 0], enu[frame_idx, 1] - enu[frame_idx - 1, 1], yaw[frame_idx] - yaw[frame_idx - 1]))
+
 
 
 # with open(CALIB_IMU_TO_VELO_PATH, 'r') as calib_imu_to_velo_file:
