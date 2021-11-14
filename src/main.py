@@ -24,10 +24,10 @@ import imageio
 random.seed(11)
 np.random.seed(17)
 
-MAIN_DATASET_PATH = "../../Data/kitti_data/2011_09_26"
-DRIVE_NUMBER = "0013"
-# MAIN_DATASET_PATH = "../../Data2/kitti_data/2011_09_26"
-# DRIVE_NUMBER = "0005"
+# MAIN_DATASET_PATH = "../../Data/kitti_data/2011_09_26"
+# DRIVE_NUMBER = "0013"
+MAIN_DATASET_PATH = "../../Data2/kitti_data/2011_09_26"
+DRIVE_NUMBER = "0005"
 # MAIN_DATASET_PATH = "../../Data3/kitti_data/2011_09_26"
 # DRIVE_NUMBER = "0061"
 OXTS_DATASET_PATH = MAIN_DATASET_PATH + "/2011_09_26_drive_" + DRIVE_NUMBER + "_sync/oxts"
@@ -144,7 +144,7 @@ def calc_icp(velodyne_frame, velodyne_frame_prev, frame_idx, config_name):
     T = np.identity(4)
     iter = 0
     max_iterations = 300
-    while delta_err > 1e-16 and iter < max_iterations:
+    while delta_err > 1e-20 and iter < max_iterations:
         # pick the best points
         dist_, ind_ = tree.query(Pt, k=1)
         dist, ind = dist_.squeeze(), ind_.squeeze()
@@ -975,6 +975,36 @@ def main():
 
     plt.show()
 
+    # sanity that the second type of transform is working
+    # curr_frame = 5
+    # prev_frame = 0
+    # velodyne_frame = velodyne["frames_raw"][curr_frame].copy()
+    # velodyne_frame_prev = velodyne["frames_raw"][prev_frame].copy()
+    #
+    # rotation = np.identity(4)
+    # delta_rad = -(yaw[curr_frame] - yaw[prev_frame])
+    # rotation[0:2, 0:2] = np.array([[np.cos(delta_rad), np.sin(delta_rad)], [-np.sin(delta_rad), np.cos(delta_rad)]]).reshape(2, 2)
+    # delta_x = enu[curr_frame, 0] - enu[prev_frame, 0]
+    # delta_y = enu[curr_frame, 1] - enu[prev_frame, 1]
+    # translation = np.array([delta_x, delta_y, 0, 0]).reshape(4, 1)
+    # velodyne_frame_transformed = (np.dot(rotation, velodyne_frame.T - translation)).T
+    #
+    # _, velodyne_frame_transformed_bev = process_frame(
+    #     np.concatenate([velodyne_frame_transformed, velodyne_frame_prev], axis=0), 0, curr_frame)
+    # fig, (ax1) = plt.subplots(1, 1)
+    #
+    # map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
+    # ax1.set_xticks([0, (map_size // 2), map_size - 2])
+    # ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
+    # ax1.set_yticks([0, (map_size // 2), map_size - 2])
+    # ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
+    # ax1.set_xlabel('X [meters]', fontsize=20)
+    # ax1.set_ylabel('Y [meters]', fontsize=20)
+    # ax1.set_title('Difference between frame [{}] and frame [{}] after transforming'.format(curr_frame, prev_frame))
+    # ax1.imshow(velodyne_frame_transformed_bev, vmin=0.0, vmax=1.0)
+    #
+    # plt.show()
+
     # sanity that ICP is working
     # I take the same frame and transpose it, expecting that the ICP algorithm will find the inverse of that transpose
     curr_frame = 15
@@ -991,10 +1021,6 @@ def main():
                                         enu[curr_frame, 1], enu[curr_frame, 2],
                                         yaw[curr_frame], velo_to_imu_R, velo_to_imu_t)
 
-    # rotation = np.identity(4)
-    # rotation[0:2, 0:2] = np.array([[np.cos(delta_rad), np.sin(delta_rad)], [-np.sin(delta_rad), np.cos(delta_rad)]]).reshape(2, 2)
-    # translation = np.array([delta_x, delta_y, 0, 0]).reshape(4, 1)
-    # velodyne_frame_enu = (np.dot(rotation, velodyne_frame_enu.T) + translation).T
     e_icp_diff, n_icp_diff, yaw_icp_diff, R, t = calc_icp(velodyne_frame_enu, velodyne_frame_prev_enu, curr_frame, None)
     print("e_icp_diff [{}] n_icp_diff [{}] yaw_icp_diff [{}]".format(e_icp_diff, n_icp_diff, yaw_icp_diff))
 
@@ -1007,37 +1033,53 @@ def main():
     # s_icp_corrected_yaw = (yaw[curr_frame] + delta_yaw) - yaw_icp_diff + yaw_correction_1 - yaw_correction_2
     s_icp_corrected_yaw = (yaw[curr_frame] + delta_yaw) + yaw_icp_diff
 
+    assert abs(s_icp_corrected_e - enu[curr_frame, 0]) < 0.01
+    assert abs(s_icp_corrected_n - enu[curr_frame, 1]) < 0.01
+    assert abs(s_icp_corrected_yaw - yaw[curr_frame]) < 0.01
+
+    # sanity that ICP is working
+    # I take the same frame and transpose it, expecting that the ICP algorithm will find the inverse of that transpose
+    curr_frame = 15
+    prev_frame = 14
+    delta_e = 0.0
+    delta_n = 0.0
+    delta_yaw = 0.00
+    velodyne_frame = velodyne["frames_raw"][curr_frame].copy()
+    velodyne_frame_filtered = filter_velodyne_data(velodyne_frame, min_height=1.53)
+    velodyne_frame_enu = transform_velodyne(velodyne_frame_filtered, enu[curr_frame, 0] + delta_e,
+                                        enu[curr_frame, 1] + delta_n, enu[curr_frame, 2],
+                                        yaw[curr_frame] + delta_yaw, velo_to_imu_R, velo_to_imu_t)
+    velodyne_frame_prev = velodyne["frames_raw"][prev_frame].copy()
+    velodyne_frame_prev_filtered = filter_velodyne_data(velodyne_frame_prev, min_height=1.53)
+    velodyne_frame_prev_enu = transform_velodyne(velodyne_frame_prev_filtered, enu[prev_frame, 0],
+                                                 enu[prev_frame, 1], enu[prev_frame, 2],
+                                                 yaw[prev_frame], velo_to_imu_R, velo_to_imu_t)
+    e_icp_diff, n_icp_diff, yaw_icp_diff, R, t = calc_icp(velodyne_frame_enu, velodyne_frame_prev_enu, curr_frame, None)
+
+    # R = np.identity(4)
+    # R[0:2, 0:2] = np.array([[np.cos(-delta_yaw), -np.sin(-delta_yaw)], [np.sin(-delta_yaw), np.cos(-delta_yaw)]]).reshape(2, 2)
+    # t_e_diff = enu[curr_frame, 0] - enu[prev_frame, 0]
+    # t_n_diff = enu[curr_frame, 1] - enu[prev_frame, 1]
+    # t = np.array([t_e_diff, t_n_diff, 0.0, 0.0]).reshape(4, 1)
+    # velodyne_frame_filtered = (np.dot(R, velodyne_frame_filtered.T) + t).T
+    # e_icp_diff, n_icp_diff, yaw_icp_diff, R, t = calc_icp(velodyne_frame_filtered, velodyne_frame_prev_filtered, curr_frame, None)
+
+    en = np.array([enu[curr_frame, 0] + delta_e, enu[curr_frame, 1] + delta_n]).squeeze()
+    en_corrected = np.dot(R[0:2, 0:2], en.reshape(2, 1)) + t[0:2].reshape(2, 1)
+    s_icp_corrected_e = en_corrected[0]
+    s_icp_corrected_n = en_corrected[1]
+    s_icp_corrected_yaw = (yaw[curr_frame] + delta_yaw) + yaw_icp_diff
+
+    print("e_icp_diff [{}] n_icp_diff [{}] yaw_icp_diff [{}]".format(e_icp_diff, n_icp_diff, yaw_icp_diff))
     print((np.pi/2 - ((yaw[curr_frame] + delta_yaw) - yaw_icp_diff)))
     print(np.pi/2 - (yaw[curr_frame]))
     print("e {} {}".format(s_icp_corrected_e, enu[curr_frame, 0]))
     print("n {} {}".format(s_icp_corrected_n, enu[curr_frame, 1]))
     print("yaw {} {}".format(s_icp_corrected_yaw, yaw[curr_frame]))
 
-    # rotation = np.identity(4)
-    # rotation[0:2, 0:2] = np.array([[np.cos(yaw_icp_diff), np.sin(yaw_icp_diff)], [-np.sin(yaw_icp_diff), np.cos(yaw_icp_diff)]]).reshape(2, 2)
-    # translation = np.array([e_icp_diff, n_icp_diff, 0, 0]).reshape(4, 1)
-    # velodyne_frame_corrected = (np.dot(rotation, velodyne_frame_enu.T) - translation).T
-    # _, velodyne_frame_transformed_bev = process_frame(np.concatenate([velodyne_frame_corrected, velodyne_frame_prev_enu], axis=0), 0, curr_frame)
-    # fig, (ax1) = plt.subplots(1, 1)
-    #
-    # map_size = int((2 * MAX_RANGE_RADIUS_METERS) / MAP_RESOLUTION)
-    # ax1.set_xticks([0, (map_size // 2), map_size - 2])
-    # ax1.set_xticklabels([-MAX_RANGE_RADIUS_METERS, 0.0, MAX_RANGE_RADIUS_METERS], fontsize=20)
-    # ax1.set_yticks([0, (map_size // 2), map_size - 2])
-    # ax1.set_yticklabels([MAX_RANGE_RADIUS_METERS, 0.0, -MAX_RANGE_RADIUS_METERS], fontsize=20)
-    # ax1.set_xlabel('X [meters]', fontsize=20)
-    # ax1.set_ylabel('Y [meters]', fontsize=20)
-    # ax1.set_title('Moving a transposed frame according to the ICP result'.format(curr_frame, prev_frame))
-    # ax1.imshow(velodyne_frame_transformed_bev, vmin=0.0, vmax=1.0)
-    #
-    # plt.show()
-    assert abs(s_icp_corrected_e - enu[curr_frame, 0]) < 0.01
-    assert abs(s_icp_corrected_n - enu[curr_frame, 1]) < 0.01
+    assert abs(s_icp_corrected_e - enu[curr_frame, 0]) < 0.02
+    assert abs(s_icp_corrected_n - enu[curr_frame, 1]) < 0.1
     assert abs(s_icp_corrected_yaw - yaw[curr_frame]) < 0.01
-
-    # assert abs(e_icp_diff - delta_x) < 0.01
-    # assert abs(n_icp_diff - delta_y) < 0.01
-    # assert abs(yaw_icp_diff - (-delta_rad)) < 0.01
 
     for config in configs:
         occupancy_map = np.zeros((map_size_v, map_size_u), dtype=float)
@@ -1067,7 +1109,6 @@ def main():
                 # curr frame
                 velodyne_frame_filtered_for_icp = filter_velodyne_data(velodyne_frame.copy(), min_height=1.53)
                 # _, _, yaw_icp_diff_2, _, _ = calc_icp(velodyne_frame_filtered_for_icp, velodyne_frame_prev_filtered_for_icp, frame_idx, config_name)
-
                 velodyne_frame_transformed_and_filtered_for_icp = transform_velodyne(velodyne_frame_filtered_for_icp, enu_from_config[frame_idx, 0], enu_from_config[frame_idx, 1], enu_from_config[frame_idx, 2], yaw_from_config[frame_idx], velo_to_imu_R, velo_to_imu_t)
                 # prev frame
                 velodyne_frame_prev = velodyne["frames_raw"][frame_idx - 1]
@@ -1084,6 +1125,17 @@ def main():
                 # yaw_correction_1 = (np.pi / 2 - (yaw_from_config[frame_idx] - yaw_icp_diff))
                 # yaw_correction_2 = np.pi / 2 - yaw_from_config[frame_idx - 1]
                 # icp_corrected_yaw = yaw_from_config[frame_idx] - yaw_icp_diff + yaw_correction_1 - yaw_correction_2
+
+                # theta_diff = yaw_from_config[frame_idx] - yaw_noise_icp[-1]  # yaw_from_config[frame_idx - 1]
+                # R = np.identity(4)
+                # R[0:2, 0:2] = np.array([[np.cos(-theta_diff), -np.sin(-theta_diff)], [np.sin(-theta_diff), np.cos(-theta_diff)]]).reshape(2, 2)
+                # t_e_diff = (enu_from_config[frame_idx, 0] - e_noise_icp[-1])  # enu_from_config[frame_idx - 1, 0])
+                # t_n_diff = -(enu_from_config[frame_idx, 1] - n_noise_icp[-1])  # enu_from_config[frame_idx - 1, 1])
+                # t = np.array([t_n_diff, t_e_diff, 0.0, 0.0]).reshape(4, 1)
+                # # print("going to apply t {}".format(t))
+                # velodyne_frame_filtered_for_icp = (np.dot(R, velodyne_frame_filtered_for_icp.T) + t).T
+                # _, _, yaw_icp_diff, _, _ = calc_icp(velodyne_frame_filtered_for_icp, velodyne_frame_prev_filtered_for_icp, frame_idx, config_name)
+
                 icp_corrected_yaw += yaw_icp_diff
                 # icp_corrected_yaw = yaw[frame_idx]
 
@@ -1191,6 +1243,7 @@ def main():
             plt.show()
     print("Iterative Closest Point (ICP)")
     print("Done")
+
 
 if __name__ == "__main__":
     main()
