@@ -1,4 +1,5 @@
 numpy
 pymap3d
-sklearn
+scikit-lear
 imageio
+pillow
